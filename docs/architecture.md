@@ -40,8 +40,10 @@ firmware/
 │   │   └── status_led.[hc]pp   — WS2812 (GPIO38) status indication only (power/CAN/VT state)
 │   ├── isobus/
 │   │   ├── ecu_identity.cpp    — NAME construction, address claim setup
-│   │   ├── vt_app.[hc]pp       — object pool per vt-ui-design.md (Data Mask + Main SKM), VT client glue
-│   │   ├── auxn_app.[hc]pp     — 9 Auxiliary Functions (8 relays + buzzer), input handling
+│   │   ├── vt_app.[hc]pp       — object pool per vt-ui-design.md (Data Mask + Main SKM + 17 Auxiliary
+│   │   │                        Functions), VT client glue, and AUX-N input handling -- merged into one
+│   │   │                        module rather than the auxn_app.[hc]pp split originally planned here,
+│   │   │                        since both sides share the same VirtualTerminalClient event dispatcher
 │   │   └── diagnostics.cpp     — DM1 reporting (stretch goal)
 │   ├── automation/
 │   │   └── rules_engine.[hc]pp — input-to-output rule evaluation

@@ -132,15 +132,26 @@ review:
 
 ## Phase 4 — AUX-N
 
-- [ ] Publish 9 Auxiliary Function objects: 8 latching relay channels +
-      1 non-latching/momentary buzzer trigger (see
-      [vt-ui-design.md](vt-ui-design.md#aux-n-functions-9-total)).
-- [ ] Handle Auxiliary Input Status messages to drive relays (and pulse
+- [x] Publish 17 Auxiliary Function Type 2 objects: 8 relay channels ×
+      (latching + momentary variant) + 1 momentary buzzer trigger — see
+      [vt-ui-design.md](vt-ui-design.md#aux-n-functions-17-total) for why
+      two variants per channel, and why Type 2 (not the Type 1 shown in
+      every vendored library example — AgIsoStack++'s own parser flags
+      Type 1 as ignored by VT version 3+ terminals for real assignment).
+- [x] Handle Auxiliary Input Status messages to drive relays (and pulse
       the buzzer) from a tractor joystick/armrest button, once assigned
-      via the tractor's own AUX-N menu.
-- [ ] Verify manual VT control and AUX-N control don't fight each other
+      via the tractor's own AUX-N menu — see
+      [vt_app.cpp](../firmware/main/isobus/vt_app.cpp)'s
+      `handle_aux_function_event`. Builds clean and boots without error on
+      the bench; end-to-end assignment (a real joystick button actually
+      mapped and driving a relay) still needs a retest once the bench's
+      joystick/VT connectivity is stable (see the Phase 3 known issues).
+- [x] Verify manual VT control and AUX-N control don't fight each other
       (e.g. last-write-wins, or explicit precedence rule — decide and
-      document).
+      document) — both paths funnel through the same `apply_relay_state`
+      helper, which is the single place relay state changes and the VT
+      Data Mask gets updated; neither path is more authoritative, matching
+      requirement F11.
 
 ## Phase 5 — Naming, icons, persistence
 

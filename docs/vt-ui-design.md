@@ -2,15 +2,20 @@
 
 Concrete object pool design for the primary VT screen: 8 relay-state
 indicators in a row, 8 dedicated soft keys to toggle them, 1 dedicated
-soft key to trigger the buzzer, and 9 matching AUX-N functions (R1–R8 +
-buzzer). This refines the general VT/AUX-N notes in
+soft key to trigger the buzzer, and 17 matching AUX-N functions (a
+latching + a momentary variant per relay channel R1–R8, plus one momentary
+buzzer function). This refines the general VT/AUX-N notes in
 [isobus-protocol.md](isobus-protocol.md) into an actual layout. Naming/icon
 *picking* UI (Phase 5) and automation rule UI (Phase 6) build on top of
 this later and are not covered here.
 
-Status: design proposal, not yet implemented (see [roadmap.md](roadmap.md)
-Phases 3–4). No bitmaps have been drawn yet — this document specifies what
-they need to satisfy.
+Status: **implemented and bench-verified** (Phase 3 — VT screen + SKM —
+confirmed rendering and toggling relays on a real VT; Phase 4 — AUX-N —
+implemented, end-to-end assignment testing pending real joystick hardware
+access). See [roadmap.md](roadmap.md) Phases 3–4 and
+[firmware/tools/gen_object_pool.py](../firmware/tools/gen_object_pool.py)
+for the actual generator. No bitmaps have been drawn yet (Phase 5) — text
+labels are used in their place for now.
 
 ## Object pool overview
 
@@ -54,17 +59,47 @@ resolving on the bench (see [Open questions](#open-questions)); options if
 "more" key, or (fallback) drop the buzzer to a Data Mask button only on
 VTs that can't fit a 9th key.
 
-## AUX-N functions (9 total)
+## AUX-N functions (17 total)
 
-| # | Function | Behavior | Icon |
-|---|---|---|---|
-| 1–8 | Relay channel 1–8 | Latching boolean (on/off, holds state) — a relay is genuinely either on or off, matching ISOBUS Block's persistent-switch behavior | Shared relay pictogram + channel number overlay/label, same as the SKM key |
-| 9 | Buzzer | Non-latching / momentary boolean (fires on press, doesn't need a second press to "turn off") — it's a signal, not a stored state | Distinct buzzer/speaker pictogram |
+Each relay channel publishes **two** Auxiliary Function Type 2 objects —
+one latching, one momentary — so the operator picks whichever behavior
+fits their equipment in the tractor's own native AUX-N assignment menu
+(toggle for lights/pumps/fans, hold-to-run for spool-valve-style loads).
+This is a deliberate choice, not an oversight: since a function's type is
+fixed at pool-authoring time (can't be changed per assignment), and the
+hardware is generic relay contacts that could drive either kind of load,
+offering both lets the assignment-time choice live where it belongs — with
+the person wiring up the equipment — at the cost of a longer list in the
+tractor's assignment menu.
 
-All 9 are advertised unconditionally; whether any physical joystick/armrest
+| # | Function | Type 2 `FunctionType` | Behavior | Icon |
+|---|---|---|---|---|
+| 1–8 | Relay channel 1–8, latching | `BooleanLatchingOnOff` (0) | Mirrors the input's reported value directly to the relay; since a latching input reports its own sustained position, this reads as toggle-on/toggle-off | Shared relay pictogram + channel number, same as the SKM key |
+| 9–16 | Relay channel 1–8, momentary | `BooleanNonLatchingIncreaseValue` (2) | Same direct mirroring, but a momentary input reports 1 only while held — so the relay is on only while the mapped button is held | Same pictogram + channel number, with a distinct "momentary" mark (hold icon / different border style — TBD Phase 5) |
+| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Same momentary mirroring; matches SK9's pulse behavior on rising edge | Distinct buzzer/speaker pictogram |
+
+**Why the device doesn't need different logic for latching vs. momentary:**
+per ISO 11783-6, a latching input reports its own persisted 0/1 state on
+change; a momentary (non-latching) input reports 1 only while physically
+held and 0 on release. Our device applies whatever boolean value it
+receives straight to the relay in both cases (`relay_driver::set_relay`) —
+the "feel" comes entirely from how the *input device* reports its value
+over time, not from extra logic on our side.
+
+All 17 are advertised unconditionally; whether any physical joystick/armrest
 button actually gets mapped to one is entirely up to the tractor's own
 native AUX-N assignment menu (see [isobus-protocol.md](isobus-protocol.md#auxiliary-control--aux-n-iso-11783-6-annex--iso-11783-7)).
-Our only job is to publish 9 distinctly-iconed, correctly-typed functions.
+Our only job is to publish 17 distinctly-iconed, correctly-typed functions.
+
+**Type 2, not Type 1:** AgIsoStack++'s own object-pool parser
+(`isobus_virtual_terminal_working_set_base.cpp`) logs that
+`AuxiliaryFunctionType1` objects are "parsed and validated but NOT
+utilized by version 3 or later VTs in making Auxiliary Control
+Assignments" — confirmed relevant here since the bench VT reports a
+version well into that range. `AuxiliaryFunctionType2` (ISO 11783-6:2018)
+is the one that actually works on modern terminals, so that's what's
+implemented, even though every example in the vendored library still only
+demonstrates the (deprecated-for-this-purpose) Type 1 path.
 
 ## Icon design guidelines
 

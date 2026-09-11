@@ -78,10 +78,11 @@ See [vt-ui-design.md](vt-ui-design.md) for the concrete main-screen layout
 
 This is the "assign to a joystick/armrest button" feature:
 
-- The device advertises **9 Auxiliary Function objects**: one latching
-  boolean per relay channel (8) plus one non-latching/momentary boolean
-  for the buzzer trigger — see [vt-ui-design.md](vt-ui-design.md#aux-n-functions-9-total)
-  for the full list and icon plan.
+- The device advertises **17 Auxiliary Function Type 2 objects**: a
+  latching + a momentary variant per relay channel (16) plus one
+  non-latching/momentary boolean for the buzzer trigger — see
+  [vt-ui-design.md](vt-ui-design.md#aux-n-functions-17-total) for the full
+  list, why two variants per channel, and why Type 2 rather than Type 1.
 - Physical **Auxiliary Input** devices (tractor joystick, armrest buttons)
   advertise their own Auxiliary Input objects.
 - The operator maps a function → input using the *tractor's* native AUX-N
@@ -125,7 +126,8 @@ needs, in priority order:
 1. Address claiming with a correct NAME (device is visible on the bus).
 2. VT client: object pool upload + Data Mask with the 8-in-a-row relay
    indicators, togglable directly from the VT (see [vt-ui-design.md](vt-ui-design.md)).
-3. AUX-N: 9 Auxiliary Function objects (8 relays + buzzer), assignable via
+3. AUX-N: 17 Auxiliary Function Type 2 objects (8 relays × 2 variants +
+   buzzer), assignable via
    the tractor's own joystick/armrest menu.
 4. On-VT channel naming (Input String) and icon selection (Object
    Pointer + pre-loaded Picture Graphics), persisted locally.

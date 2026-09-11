@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """Generates the ISO 11783-6 VT object pool binary (.iop) for the main
 screen, per docs/vt-ui-design.md: a Data Mask with an 8-in-a-row relay
-state indicator strip, and a Main Soft Key Mask with SK1-SK8 (relay
-toggles) + SK9 (buzzer pulse).
+state indicator strip, a Main Soft Key Mask with SK1-SK8 (relay toggles) +
+SK9 (buzzer pulse), and 17 Auxiliary Function Type 2 objects (a latching +
+a momentary variant per relay channel, plus one momentary buzzer function)
+for AUX-N joystick/armrest assignment.
+
+Auxiliary Function Type 2, not Type 1: AgIsoStack++'s own parser
+(isobus_virtual_terminal_working_set_base.cpp) logs that Type 1 objects
+are "parsed and validated but NOT utilized by version 3 or later VTs in
+making Auxiliary Control Assignments" -- Type 2 is the one that actually
+works on modern terminals.
 
 There's no C++ pool-builder API in AgIsoStack++ (object pools are normally
 authored with an external VT designer GUI and shipped as a raw .iop
@@ -32,6 +40,12 @@ T_OUTPUT_RECTANGLE = 14
 T_FONT_ATTRIBUTES = 23
 T_LINE_ATTRIBUTES = 24
 T_FILL_ATTRIBUTES = 25
+T_AUXILIARY_FUNCTION_TYPE_2 = 31
+
+# AuxiliaryFunctionType2::FunctionType (ISO 11783-6:2018 table J.5) values
+# actually used here.
+AUX_FUNC_LATCHING_ON_OFF = 0
+AUX_FUNC_NON_LATCHING_MOMENTARY = 2
 
 # Standard VT colour palette indices actually used here.
 COLOUR_BLACK = 0
@@ -56,6 +70,21 @@ def relay_label_id(channel):
 
 def relay_fill_attr_id(channel):
     return 1920 + channel
+
+
+def aux_latch_function_id(channel):  # channel: 1-8
+    return 1500 + channel
+
+
+def aux_momentary_function_id(channel):  # channel: 1-8
+    return 1520 + channel
+
+
+def aux_momentary_label_id(channel):
+    return 1540 + channel
+
+
+ID_AUX_BUZZER_FUNCTION = 1560
 
 
 def softkey_id(key_number):  # key_number: 1-9 (1-8 relays, 9 buzzer)
@@ -178,6 +207,23 @@ def make_key(object_id, key_code, children):
     return object_header(object_id, T_KEY) + body
 
 
+def make_auxiliary_function_type2(object_id, function_type, children):
+    # Not a child of the Working Set or any mask -- per
+    # WorkingSet::get_is_valid() in AgIsoStack++, Auxiliary Function
+    # objects are deliberately NOT among the object types a Working Set
+    # may list as a child; they just need to exist as independent
+    # top-level objects in the pool. No macro support for this object type
+    # (no macro count field at all, unlike most other objects).
+    background_colour = COLOUR_WHITE
+    function_type_byte = function_type & 0x1F  # bits 5-7: Critical/Assignment flags, all 0
+    body = (
+        bytes([background_colour, function_type_byte])
+        + bytes([len(children)])
+        + b"".join(child_ref(oid, x, y) for oid, x, y in children)
+    )
+    return object_header(object_id, T_AUXILIARY_FUNCTION_TYPE_2) + body
+
+
 def make_font_attributes(object_id, size=1, font_type=0, style=0, colour=COLOUR_BLACK):
     body = bytes([colour, size, font_type, style]) + macro_list()
     return object_header(object_id, T_FONT_ATTRIBUTES) + body
@@ -244,6 +290,32 @@ def build_pool():
     objects.append(make_soft_key_mask(key_ids))
     objects.append(make_data_mask(data_mask_children))
 
+    # --- Auxiliary Function Type 2 objects: AUX-N joystick/armrest
+    # assignment. Two variants per relay channel (latching + momentary) so
+    # the operator picks whichever behavior fits their equipment in the
+    # tractor's own AUX-N assignment menu; our own device applies whatever
+    # boolean value the assigned input reports directly to the relay in
+    # both cases; the "latch" vs. "momentary" feel comes entirely from how
+    # the input device itself reports that value over time (sustained vs.
+    # only-while-held), not from any extra logic on our side. Not children
+    # of anything -- see make_auxiliary_function_type2()'s docstring.
+    for ch in range(1, 9):
+        # Latching variant reuses the existing "R{ch}" label.
+        objects.append(make_auxiliary_function_type2(
+            aux_latch_function_id(ch), AUX_FUNC_LATCHING_ON_OFF,
+            children=[(relay_label_id(ch), 2, 2)]))
+
+        momentary_label_id = aux_momentary_label_id(ch)
+        objects.append(make_output_string(momentary_label_id, 16, 10, "R{}h".format(ch)))
+        objects.append(make_auxiliary_function_type2(
+            aux_momentary_function_id(ch), AUX_FUNC_NON_LATCHING_MOMENTARY,
+            children=[(momentary_label_id, 2, 2)]))
+
+    # Buzzer: momentary only, reuses the SK9 "Bz" label.
+    objects.append(make_auxiliary_function_type2(
+        ID_AUX_BUZZER_FUNCTION, AUX_FUNC_NON_LATCHING_MOMENTARY,
+        children=[(softkey_label_id(9), 2, 2)]))
+
     # --- Working Set (root) ---
     # Reuses the title string as its designator (valid: an object may be
     # the child of more than one parent).
@@ -273,6 +345,11 @@ def generate_ids_header():
         "",
         "// key_number: 1-8 = relay channels, 9 = buzzer",
         "inline uint16_t softkey_id(int key_number) {{ return {} + key_number; }}".format(1210),
+        "",
+        "// AUX-N Auxiliary Function Type 2 objects. channel: 1-8.",
+        "inline uint16_t aux_latch_function_id(int channel) {{ return {} + channel; }}".format(1500),
+        "inline uint16_t aux_momentary_function_id(int channel) {{ return {} + channel; }}".format(1520),
+        "constexpr uint16_t kAuxBuzzerFunction = {};".format(ID_AUX_BUZZER_FUNCTION),
         "",
         "}  // namespace iso::object_pool_ids",
         "",

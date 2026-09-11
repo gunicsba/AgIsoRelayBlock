@@ -29,8 +29,9 @@ Status legend: 🎯 target for MVP · 🧊 stretch/later · ❌ out of scope
 - 🎯 **F5.** Each channel can be assigned, from the tractor's *own* native
   AUX-N assignment menu, to any joystick/armrest button (device just needs
   to publish correct Auxiliary Function objects; no custom assignment UI
-  is built by us). 9 functions total are published: 8 relay channels +
-  1 buzzer trigger (F24).
+  is built by us). 17 functions total are published: 8 relay channels ×
+  (latching + momentary variant, operator picks per channel at assignment
+  time) + 1 buzzer trigger (F24).
 - 🎯 **F6.** Channel state changes (from VT, AUX-N, or automation) reflect
   back to the VT display within a reasonable UI-refresh latency.
 - 🧊 **F7.** Per-channel output "type" (latching / momentary / pulse

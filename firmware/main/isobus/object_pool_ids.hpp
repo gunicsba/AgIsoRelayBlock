@@ -18,4 +18,9 @@ inline uint16_t relay_fill_attr_id(int channel) { return 1920 + channel; }
 // key_number: 1-8 = relay channels, 9 = buzzer
 inline uint16_t softkey_id(int key_number) { return 1210 + key_number; }
 
+// AUX-N Auxiliary Function Type 2 objects. channel: 1-8.
+inline uint16_t aux_latch_function_id(int channel) { return 1500 + channel; }
+inline uint16_t aux_momentary_function_id(int channel) { return 1520 + channel; }
+constexpr uint16_t kAuxBuzzerFunction = 1560;
+
 }  // namespace iso::object_pool_ids
