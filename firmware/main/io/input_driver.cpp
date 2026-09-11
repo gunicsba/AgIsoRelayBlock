@@ -20,26 +20,41 @@ void init() {
     gpio_config_t cfg = {};
     cfg.pin_bit_mask = pin_mask;
     cfg.mode = GPIO_MODE_INPUT;
-    // Originally assumed the board's optocoupler input stage supplies its
-    // own bias, needing no internal pull -- bench-disproven: with nothing
-    // wired to an input, it floats and reads noise (observed as a channel
-    // randomly toggling "disabled" via the Phase 6 interlock with nobody
-    // touching anything). Since these inputs can drive a safety interlock
-    // that force-disables an output, an undefined floating state is a real
-    // problem, not just cosmetic -- pull down so an unconnected input
-    // settles to a defined LOW ("inactive"), matching the same
-    // safe-default philosophy as everything else here (N4).
-    cfg.pull_up_en = GPIO_PULLUP_DISABLE;
-    cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    // Pull-up, not pull-down: matches Waveshare's own official demo
+    // firmware (WS_DIN.cpp's DIN_Init(), from the vendor's Arduino demo
+    // package) exactly -- `pinMode(DIN_PINx, INPUT_PULLUP)`. This isn't
+    // just an idle-state default choice, it reflects the actual circuit:
+    // each channel's opto phototransistor pulls the isolated-side GPIO
+    // LOW when the field-side LED is driven (input asserted) and leaves
+    // it floating otherwise, so the pull direction has to be UP for an
+    // unconnected/inactive input to read a defined HIGH. A pull-down here
+    // (an earlier version of this code, bench-tested against floating-
+    // input noise but not against the vendor's reference) still fixed the
+    // floating-noise symptom, since either direction defines an idle
+    // level, but it defined the WRONG idle level for this circuit --
+    // confirmed by a bench report of each channel's status LED behaving
+    // backwards from expectation (brighter toward DGND, unaffected by
+    // COM) after that change went in. See docs/hardware.md's DI wiring
+    // open question.
+    cfg.pull_up_en = GPIO_PULLUP_ENABLE;
+    cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
     cfg.intr_type = GPIO_INTR_DISABLE;
     gpio_config(&cfg);
 }
 
+// Active-low at the raw GPIO level (see init()'s comment: the opto pulls
+// the pin LOW when the input is actually asserted) -- inverted here, at
+// the one point raw electrical state becomes a logical reading, so every
+// caller (automation::interlock and friends) can treat read()/
+// read_debounced() returning true as "input active" without needing to
+// know the polarity is flipped underneath. Matches Waveshare's own demo
+// firmware, which does the same inversion in software
+// (WS_DIN.h's DIN_Inverse_Enable) rather than in hardware.
 bool read(uint8_t channel) {
     if (channel < 1 || channel > 8) {
         return false;
     }
-    return gpio_get_level(kPins[channel - 1]) != 0;
+    return gpio_get_level(kPins[channel - 1]) == 0;
 }
 
 namespace {
@@ -49,7 +64,7 @@ uint8_t g_match_count[8] = {};  // consecutive reads matching the raw level oppo
 
 void update() {
     for (int i = 0; i < 8; ++i) {
-        bool raw = gpio_get_level(kPins[i]) != 0;
+        bool raw = gpio_get_level(kPins[i]) == 0;  // active-low -- see init()'s comment
         if (raw == g_debounced_state[i]) {
             g_match_count[i] = 0;  // still agrees with the current debounced state
             continue;

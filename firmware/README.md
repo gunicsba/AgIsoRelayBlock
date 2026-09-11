@@ -253,10 +253,25 @@ Bench-verified on real hardware (board on COM12):
   (a separate session) rather than permanently working around here.
   Reverted `vt_app.cpp` back to passing the content-hash version label to
   `set_object_pool()` -- pool caching is the correct long-term behavior.
-  Also bench-observed that the build-version text added above didn't
-  actually show up next to the title on that same screen; not chased
-  further this session (same suspected bug class), but worth a fresh
-  capture to confirm whether it's even being sent next time this comes up.
+  (The build-version title text itself was confirmed showing up correctly
+  on a later bench check.)
+- 2026-09-11: the DI pull-down fix from earlier in this file silenced
+  floating-input noise but got the polarity backwards -- caught from a
+  bench report that each channel's onboard status LED behaves opposite to
+  what "COM = active" would suggest. The wiki blocks automated fetches
+  (403), but Waveshare's own Arduino demo package settles it directly
+  (`WS_DIN.cpp`'s `DIN_Init()`): `INPUT_PULLUP` on all 8 channels, with a
+  `DIN_Inverse_Enable` flag inverting the raw reading in software --
+  each channel's optocoupler pulls the isolated-side GPIO LOW when the
+  input is actually asserted, so the correct idle bias is pull-**up**
+  with an active-**low** reading, not the pull-down from before. Switched
+  [input_driver.cpp](main/io/input_driver.cpp) to `GPIO_PULLUP_ENABLE`
+  and inverted the raw-to-logical reading at that same single point, so
+  every caller is unaffected. Built, flashed to COM12. Bench follow-up:
+  unconnected channels (DI4-DI7) now show intermittent chatter, not yet
+  root-caused -- see
+  [../docs/roadmap.md](../docs/roadmap.md#phase-6--automation-rules) for
+  status.
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

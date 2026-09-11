@@ -406,6 +406,30 @@ that actually motivated this phase, rather than the fully generic
   text ("R1") but not the disabled marker ("R1!", 3 characters), which
   didn't fit. Widened the label (and the column spacing to match) using
   screen space that was otherwise going unused.
+- The pull-down fix above stopped the flickering but got the *polarity*
+  wrong, discovered from a bench report that each DI channel's onboard
+  status LED behaves backwards from "COM = active" (brighter toward DGND,
+  unaffected by COM). The wiki blocks automated fetches (403), but
+  Waveshare's official Arduino demo (`ESP32-S3-POE-ETH-8DI-8RO-C-Demo.zip`,
+  `WS_DIN.cpp`) settles it directly: `INPUT_PULLUP` on all 8 channels, plus
+  a `DIN_Inverse_Enable` flag inverting the raw reading in software. Each
+  channel's optocoupler pulls the isolated-side GPIO LOW when the input is
+  actually asserted and leaves it floating otherwise -- active-**low**,
+  needing a pull-**up**, not the pull-down from the previous fix (which
+  still silenced the floating-noise symptom, since either direction
+  defines *some* idle level, just the wrong one here). Switched to
+  `GPIO_PULLUP_ENABLE` and inverted the raw-to-logical reading at the same
+  single point in `input_driver.cpp` (`gpio_get_level(...) == 0` means
+  active), so every caller still just sees `true` = "input active" with
+  no changes needed elsewhere. See
+  [docs/hardware.md](hardware.md#open-questions).
+  **Bench follow-up**: after this fix, unconnected channels (DI4-DI7)
+  showed intermittent chatter (active/inactive every few hundred ms to a
+  few seconds) -- not yet root-caused. Possibly genuine noise pickup on
+  open inputs (the internal ~45kΩ pull-up is weak, and this board switches
+  8 relay channels right next to the DI inputs), possibly something else;
+  waiting on confirmation of whether those channels are actually wired to
+  anything on the bench before adding more debounce/filtering.
 
 ## Phase 7 — WiFi AP & OTA
 

@@ -130,4 +130,24 @@ flagged below before this was confirmed.
 - [ ] Decide on physical ISOBUS connector/harness (screw terminal → Deutsch DT06/DT04 pigtail) — hardware task, not firmware, but affects the "bill of materials" doc later.
 - [ ] Confirm I²C bus speed vs. relay-toggle latency under load (currently running the internal pull-ups at 100 kHz, which worked for bring-up, but not benchmarked).
 - [ ] Double check against the schematic whether `GPIO17`/`GPIO18` need any variant-specific (CAN vs. RS485) transceiver-enable/mode pin beyond TX/RX.
-- [ ] Confirm correct DI wiring polarity against the schematic/wiki: bench-observed that each DI channel's onboard status LED lights faintly at idle and gets *brighter* when the input is pulled toward DGND (0 V), while pulling toward COM (the board's 5 V-ish rail) makes no visible difference -- the opposite of what "COM = active" would suggest. This is on the field side of the board's own bidirectional optocoupler, entirely before the isolation barrier, so it can't be explained by anything on our GPIO side (e.g. the `GPIO_PULLDOWN_ENABLE` change in [input_driver.cpp](../firmware/main/io/input_driver.cpp) -- that pull is on the isolated ESP32-side pin, downstream of the opto's phototransistor, with no path back to the field-side LED). Needs the wiki's DI wiring diagram to confirm intended COM/DGND polarity for passive vs. NPN/PNP wiring before treating this as a real issue.
+- [x] Confirm correct DI wiring polarity: bench-observed that each DI
+      channel's onboard status LED lights faintly at idle and gets
+      *brighter* pulling toward DGND (0 V), unaffected pulling toward
+      COM -- explained once the actual circuit was confirmed rather than
+      assumed. The wiki itself blocks automated fetches (403), but
+      Waveshare's official Arduino demo package
+      (`ESP32-S3-POE-ETH-8DI-8RO-C-Demo.zip`, `WS_DIN.cpp`) is unambiguous:
+      `pinMode(DIN_PINx, INPUT_PULLUP)` on all 8 channels, plus a
+      `DIN_Inverse_Enable` flag that inverts the raw reading before using
+      it. That means each channel's optocoupler pulls the *isolated-side*
+      GPIO LOW when the input is actually asserted (field-side LED driven,
+      i.e. pulled toward DGND) and leaves it floating otherwise -- active
+      **low**, not active-high, and pull-**up** is the correct idle bias,
+      not pull-down. Our earlier `GPIO_PULLDOWN_ENABLE` fix (for floating-
+      input noise) picked the wrong direction for this circuit even though
+      it did fix the floating-noise symptom (either direction defines
+      *some* idle level); switched to `GPIO_PULLUP_ENABLE` with the raw
+      reading inverted in `input_driver.cpp` to match the official
+      firmware exactly. Bench-confirmed the polarity now makes sense
+      against the LED behavior above. See
+      [input_driver.cpp](../firmware/main/io/input_driver.cpp).
