@@ -148,7 +148,7 @@ Bench-verified on real hardware (board on COM12):
 
   Visual confirmation from the bench: the Data Mask's 2x4 indicator grid
   and both SKM pages render correctly --
-  ![main screen: 2x4 relay indicator grid and SKM page 1 (R1-R8 underlined, BZ, >>)](../images/main%20screen.png)
+  ![main screen: 2x4 relay indicator grid and SKM page 1 (R1-R8 underlined, BZ, >>) -- image later replaced with an updated bench capture also showing the Phase 6/7 Momentary Override Safety checkbox and WiFi status panel below the grid](../images/main%20screen.png)
   -- and all 17 AUX-N functions are recognized by the VT, with the
   underline convention correctly distinguishing the toggle variant from
   the plain momentary one --
@@ -473,6 +473,51 @@ idf.py set-target esp32s3
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
+
+### Flashing a brand-new/blank board
+
+No extra steps needed beyond the `idf.py -p <PORT> flash` above -- it
+already writes everything a completely blank chip needs in one pass
+(confirmed on the bench: same command used for every reflash this
+project did, including the very first one onto unprogrammed flash):
+
+- The bootloader and this project's custom partition table
+  ([partitions.csv](partitions.csv) -- required from the first flash
+  onward, since a blank chip has no partition table at all yet).
+- `ota_data_initial.bin`, which `idf.py flash` generates and writes
+  automatically -- without it, a blank chip's `otadata` partition doesn't
+  point at either OTA slot yet and won't know which one to boot.
+- The application image itself, into `ota_0`.
+
+(This is different from `idf.py app-flash`, which writes *only* the app
+image and assumes a valid bootloader/partition table/`otadata` are
+already present from an earlier full flash -- faster for iterating on a
+board that's already been flashed once, but won't work on a blank one.)
+
+NVS (where the WiFi AP password lives) doesn't need pre-erasing either:
+`net::wifi_ap::init()` already detects and recovers from a blank/
+uninitialized NVS partition on its own (`nvs_flash_init()`'s
+`ESP_ERR_NVS_NO_FREE_PAGES`/`ESP_ERR_NVS_NEW_VERSION_FOUND` handling in
+[net/wifi_ap.cpp](main/net/wifi_ap.cpp)), generating and persisting a
+fresh random password on that first boot exactly like any other first
+boot.
+
+Practical notes specific to this board:
+
+- It enumerates as a USB-serial port as soon as it's plugged in (no
+  driver install needed on a recent Windows/Linux/macOS -- it uses a
+  standard USB-serial chip); find `<PORT>` via Device Manager on Windows
+  or `ls /dev/tty.*` / `ls /dev/ttyUSB*` on macOS/Linux.
+- No BOOT/RESET button sequence needed to enter flashing mode -- every
+  flash this project did (Windows, this exact board) went straight
+  through via the onboard USB-serial chip's automatic reset (logged by
+  `esptool` as `"Hard resetting via RTS pin..."`). If that's ever not the
+  case for a given unit/OS combination, esptool's standard manual
+  BOOT-then-RESET button sequence is the fallback -- not needed here so
+  far.
+- If `<PORT>` is reported busy/access-denied, check for an open serial
+  monitor (Arduino IDE, VS Code's built-in one, `idf.py monitor` from
+  another terminal, etc.) holding it and close that first.
 
 Expected serial output: an LED color-check sequence (RED/GREEN/BLUE, ~800ms
 each -- sanity check for the LED's actual wire color order), an I2C bus scan

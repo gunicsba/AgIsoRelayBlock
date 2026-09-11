@@ -15,7 +15,7 @@ An open-source, DIY-friendly alternative to commercial ISOBUS relay boxes
 > diagnostics for the fault conditions it can actually detect -- see
 > [Project Status](#project-status) below.
 
-![Object pool rendered on a real Virtual Terminal: 8 relay indicators in a 2x4 grid, and the 10-key Soft Key Mask (R1-R8 toggle, BZ buzzer, >> next page)](images/main%20screen.png)
+![Object pool rendered on a real Virtual Terminal: 8 relay indicators in a 2x4 grid with DI interlock boxes (R3 shown disabled as "R3!" with its DI box filled), the Momentary Override Safety checkbox, the WiFi status panel (SSID/password/IP/connected clients), and the 10-key Soft Key Mask (R1-R8 toggle, BZ buzzer, >> next page)](images/main%20screen.png)
 
 ## Why
 
