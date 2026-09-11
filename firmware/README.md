@@ -246,6 +246,17 @@ Bench-verified on real hardware (board on COM12):
   length from 15 to 44 characters (`gen_object_pool.py`'s
   `TITLE_MAX_CHARS`) to fit. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
+- 2026-09-11: dropping the version label got a real VT session all the way
+  to a fully-rendered screen for the first time -- but a same-shaped issue
+  then turned up separately in AUX-N joystick assignment, so this is being
+  treated as a VT-side bug worth fixing properly in `AgIsoVirtualTerminal`
+  (a separate session) rather than permanently working around here.
+  Reverted `vt_app.cpp` back to passing the content-hash version label to
+  `set_object_pool()` -- pool caching is the correct long-term behavior.
+  Also bench-observed that the build-version text added above didn't
+  actually show up next to the title on that same screen; not chased
+  further this session (same suspected bug class), but worth a fresh
+  capture to confirm whether it's even being sent next time this comes up.
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

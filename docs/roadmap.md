@@ -195,12 +195,18 @@ review:
     isn't, and that's exactly what made it fixable -- see below). We'd set
     this label to a content hash, purely so the VT could skip re-uploading
     an unchanged pool -- a cache-hit optimization we don't actually need
-    yet at ~1.6 KB. **Fixed on our side**: dropped the version label
-    entirely, so the client now skips Get Versions and goes straight to
-    uploading, matching how the user framed it -- "if we don't know
-    whether our version exists on the VT, just force a fresh upload".
-    Confirmed this doesn't affect the underlying `AgIsoVirtualTerminal`
-    question, though: the current source *does* implement the Get Versions
+    yet at ~1.6 KB. **Initially worked around on our side** by dropping
+    the version label entirely so the client skips Get Versions and goes
+    straight to uploading -- confirmed this unblocked the connection (VT
+    screen renders fully). **Reverted after connecting**, once a
+    same-shaped issue turned up separately in AUX-N joystick assignment:
+    judged to be a VT-side bug worth fixing properly in
+    `AgIsoVirtualTerminal` (a separate session), not something to
+    permanently route around here -- pool caching is the correct
+    long-term behavior, so `set_object_pool()` is back to passing the
+    content-hash label. Confirmed this doesn't affect the underlying
+    `AgIsoVirtualTerminal` question, though: the current source *does*
+    implement the Get Versions
     response correctly (`ServerMainComponent::get_versions()` -- lists
     cached `.iopx` files for the client's NAME, returns an empty list
     harmlessly if none exist), so the `.exe` the user's actually running
@@ -215,7 +221,19 @@ review:
     pushes `esp_app_get_description()->version` (ESP-IDF's automatic
     `git describe --always --dirty`) to the VT title right after
     connecting -- so which exact firmware build is running is visible on
-    the VT screen itself, not just a serial log.
+    the VT screen itself, not just a serial log. **Bench-observed: no
+    version text actually showed up next to the title** on the one VT
+    session that got far enough to render the full screen -- consistent
+    with the same class of bug already suspected in AUX-N assignment
+    (the VT silently not honoring a message it should respond to/act on).
+    Not chased further this session per the user's call to treat that as
+    a VT-side bug for a future session; `send_version_info()`'s call
+    itself uses the identical `send_change_string_value` pattern already
+    confirmed working for the DI-interlock relay label ("R1!"), so it
+    isn't obviously a bug on our side, but that's not proven either --
+    worth a fresh serial capture the next time this is revisited, to
+    confirm the Change String Value command is actually being sent (vs.
+    silently sent-but-ignored by the VT).
   - Also answered a direct question about the VT version we declare:
     AgIsoStack++ hardcodes `SUPPORTED_VT_VERSION = 0x06` in
     `send_working_set_maintenance()` with no public setter, so lowering it

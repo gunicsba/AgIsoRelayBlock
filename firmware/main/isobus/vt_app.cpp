@@ -14,6 +14,7 @@
 #include "isobus/isobus/can_partnered_control_function.hpp"
 #include "isobus/isobus/isobus_virtual_terminal_client.hpp"
 #include "isobus/object_pool_ids.hpp"
+#include "isobus/utility/iop_file_interface.hpp"
 
 // Symbols for the object pool binary embedded via main/CMakeLists.txt's
 // EMBED_FILES (linker-generated, matching the object pool's filename).
@@ -226,23 +227,25 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
     g_vt_partner = vt_partner;
 
     const uint32_t pool_size = static_cast<uint32_t>(object_pool_iop_end - object_pool_iop_start);
+    // Content-hashed, not hand-bumped: the VT caches pools by this label,
+    // so a stale hardcoded string here would make it silently keep serving
+    // an old cached pool after we change the generator.
+    //
+    // A non-empty label here makes the client ask the VT (Get Versions)
+    // whether it already has this pool cached before uploading, and that
+    // exchange turned out to have no fallback if the VT never answers --
+    // observed as a permanent connection stall (see
+    // docs/roadmap.md#phase-3--minimal-vt-presence). That's judged to be a
+    // VT-side bug to fix in AgIsoVirtualTerminal itself (same suspected
+    // class of bug as an AUX-N assignment issue seen separately), not
+    // something to route around here -- pool caching is the correct
+    // long-term behavior once that's fixed, so keeping it rather than
+    // permanently forcing a re-upload from this side.
+    const std::string pool_version =
+        isobus::IOPFileInterface::hash_object_pool_to_version(object_pool_iop_start, pool_size);
 
-    // Deliberately no version label: a non-empty one makes the client ask
-    // the VT (Get Versions) whether it already has this pool cached before
-    // uploading, so it can skip straight to Load Version instead -- but
-    // that adds a round trip (Get Versions / Get Versions Response / Load
-    // Version) that's unconditional once a label is set, and a VT that
-    // never answers Get Versions leaves the client stuck retrying forever
-    // with no way to fall back (confirmed via a live capture -- see
-    // docs/roadmap.md#phase-3--minimal-vt-presence). An empty label skips
-    // that whole exchange and goes straight to uploading
-    // (isobus_virtual_terminal_client.cpp's WaitForGetHardwareResponse
-    // handling branches on this exact field). The cost is a full pool
-    // re-upload on every connection instead of a cache hit, which is free
-    // at ~1.6 KB -- pool caching only pays off for large pools anyway, and
-    // Phase 5 (which would grow this pool) is deferred.
     g_vt_client = std::make_shared<isobus::VirtualTerminalClient>(vt_partner, internal_ecu);
-    g_vt_client->set_object_pool(0, object_pool_iop_start, pool_size);
+    g_vt_client->set_object_pool(0, object_pool_iop_start, pool_size, pool_version);
     g_vt_client->get_vt_soft_key_event_dispatcher().add_listener(handle_soft_key_event);
     g_vt_client->get_auxiliary_function_event_dispatcher().add_listener(handle_aux_function_event);
     g_vt_client->get_vt_change_soft_key_mask_event_dispatcher().add_listener(handle_change_soft_key_mask_event);
