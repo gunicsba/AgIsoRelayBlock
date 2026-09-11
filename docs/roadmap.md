@@ -186,25 +186,36 @@ review:
     VT Status, Working Set Master, Get Memory, Get Number of Softkeys, Get
     Text Font Data, and Get Hardware -- all respond successfully -- then
     stalls specifically on `"[VT]: Get Versions Response Timeout"`, fails,
-    and retries forever (`"Resetting Failed VT Connection"`). Confirmed in
-    `isobus_virtual_terminal_client.cpp` that this state (`SendGetVersions`
-    / `WaitForGetVersionsResponse`) is unconditional -- every client using
-    this AgIsoStack++ version passes through it regardless of object pool
-    version label content, so any VT that doesn't answer
-    `Function::GetVersionsMessage` can never complete a connection with
-    this client, no matter what we change on our end. The current
-    `AgIsoVirtualTerminal` source *does* implement this response
-    (`ServerMainComponent::get_versions()` -- lists cached `.iopx` files
-    for the client's NAME, returns an empty list harmlessly if none exist,
-    no exceptions on the read path), so the fix is most likely just
-    rebuilding/running that project's current source -- the user noted the
-    `.exe` they're running is "slightly different" from what's currently
-    checked out locally, which is the leading suspect. This is in
-    `AgIsoVirtualTerminal`, not this repo, so nothing to change here; added
-    `iso::vt_app::is_partner_claimed()` (see below) purely so a future
+    and retries forever (`"Resetting Failed VT Connection"`). Traced the
+    entry into that state in `isobus_virtual_terminal_client.cpp`: right
+    after the Get Hardware response, the client branches on whether
+    `objectPools[0].versionLabel` is empty -- non-empty sends Get Versions
+    and commits to `WaitForGetVersionsResponse` with no other way out
+    (correcting an earlier note here that called this unconditional; it
+    isn't, and that's exactly what made it fixable -- see below). We'd set
+    this label to a content hash, purely so the VT could skip re-uploading
+    an unchanged pool -- a cache-hit optimization we don't actually need
+    yet at ~1.6 KB. **Fixed on our side**: dropped the version label
+    entirely, so the client now skips Get Versions and goes straight to
+    uploading, matching how the user framed it -- "if we don't know
+    whether our version exists on the VT, just force a fresh upload".
+    Confirmed this doesn't affect the underlying `AgIsoVirtualTerminal`
+    question, though: the current source *does* implement the Get Versions
+    response correctly (`ServerMainComponent::get_versions()` -- lists
+    cached `.iopx` files for the client's NAME, returns an empty list
+    harmlessly if none exist), so the `.exe` the user's actually running
+    predating that handler (per "slightly different from what we have
+    locally") remains the leading suspect for why it hadn't answered --
+    worth a fresh rebuild/run of that project to confirm, independent of
+    this fix. Added `iso::vt_app::is_partner_claimed()` (see below) purely
+    so a future
     capture can distinguish "no VT on the bus at all" from "VT present,
     handshake stuck" at a glance without needing a fresh serial capture
-    every time.
+    every time. Also added `iso::vt_app::send_version_info()`, which
+    pushes `esp_app_get_description()->version` (ESP-IDF's automatic
+    `git describe --always --dirty`) to the VT title right after
+    connecting -- so which exact firmware build is running is visible on
+    the VT screen itself, not just a serial log.
   - Also answered a direct question about the VT version we declare:
     AgIsoStack++ hardcodes `SUPPORTED_VT_VERSION = 0x06` in
     `send_working_set_maintenance()` with no public setter, so lowering it

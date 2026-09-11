@@ -230,6 +230,22 @@ Bench-verified on real hardware (board on COM12):
      not the disabled marker ("R1!", 3 characters). Widened the label
      (and column spacing to match) using screen space that was otherwise
      unused.
+- 2026-09-11: fixed the real cause behind "Get Versions Response Timeout"
+  -- corrected the previous entry here, which had called that state
+  unconditional; it isn't. `isobus_virtual_terminal_client.cpp` only
+  enters it when the object pool's version label is non-empty, and we'd
+  set one purely so the VT could skip re-uploading an unchanged pool -- an
+  optimization not worth the risk at ~1.6 KB. Dropped the version label
+  entirely, so the client now skips straight to uploading instead of
+  waiting on a Get Versions response with no fallback if the VT never
+  answers. Also added `vt_app::send_version_info()`: pushes
+  `esp_app_get_description()->version` (ESP-IDF's automatic `git describe
+  --always --dirty`) to the VT's title right after connecting, so which
+  exact firmware build is running is visible on the VT screen itself
+  instead of only a serial log. Widened the title object's reserved
+  length from 15 to 44 characters (`gen_object_pool.py`'s
+  `TITLE_MAX_CHARS`) to fit. See
+  [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
