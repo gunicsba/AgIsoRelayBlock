@@ -5,9 +5,15 @@
 // peripheral to the real ISOBUS stack and starts NAME/address claiming.
 // Phase 3 (docs/roadmap.md#phase-3--minimal-vt-presence) uploads the VT
 // object pool and wires SK1-SK9 to the relays/buzzer.
+// Phase 7 (docs/roadmap.md#phase-7--wifi-ap--ota) brings up a SoftAP and a
+// local web UI (status/relay-control page mirroring the VT, plus OTA
+// firmware upload).
 
 #include "automation/interlock.hpp"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
+#include "esp_pthread.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "io/buzzer_driver.hpp"
@@ -18,6 +24,8 @@
 #include "io/status_led.hpp"
 #include "isobus/ecu_identity.hpp"
 #include "isobus/vt_app.hpp"
+#include "net/wifi_ap.hpp"
+#include "net/web_server.hpp"
 
 namespace {
 constexpr const char* kTag = "app_main";
@@ -56,11 +64,32 @@ extern "C" void app_main(void) {
     // loop -- a bring-up check needs to prove the I2C write path works
     // once, not click a relay forever every time this firmware boots.
 
+    // Independent of the ISOBUS stack below -- brought up here, after the
+    // CAN self-test but before the (up to 5s) address-claim wait, so
+    // there's something to connect to as early into boot as possible.
+    net::wifi_ap::init();
+
+    // AgIsoStack++'s CAN hardware interface and VT client each spawn a
+    // worker std::thread with a 64 KB stack (CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT,
+    // sdkconfig.defaults). That fit fine in internal SRAM on its own, but
+    // once WiFi came up above (its driver/lwIP buffers are a substantial,
+    // fixed internal-SRAM cost) there wasn't enough left: bench-confirmed
+    // as `E (...) pthread: Failed to create task!` immediately followed by
+    // an abort()/reboot loop, every single boot. This board has 8 MB of
+    // PSRAM sitting mostly idle (CONFIG_SPIRAM, sdkconfig.defaults) --
+    // redirect every pthread stack created from this point on (by this
+    // task, which is where ecu_identity::init() below spawns AgIsoStack++'s
+    // threads) to PSRAM instead of internal SRAM, since none of that stack
+    // usage needs to be DMA-capable or in internal RAM specifically.
+    esp_pthread_cfg_t pthread_cfg = esp_pthread_get_default_config();
+    pthread_cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    ESP_ERROR_CHECK(esp_pthread_set_cfg(&pthread_cfg));
+
     // io::can_selftest::run() above already released the TWAI peripheral
     // (twai_driver_uninstall), so it's free for the real stack to claim.
     auto internal_ecu = iso::ecu_identity::init();
+    bool claimed = false;
     if (internal_ecu) {
-        bool claimed = false;
         for (int i = 0; i < 100 && !claimed; ++i) {  // up to ~5s
             claimed = internal_ecu->get_address_valid();
             if (!claimed) {
@@ -71,7 +100,34 @@ extern "C" void app_main(void) {
                  claimed ? "OK" : "still pending after 5s",
                  internal_ecu->get_address());
     }
+
+    // Phase 7 OTA rollback (docs/architecture.md#wifi-ap--ota-planned): a
+    // freshly OTA-flashed image boots in "pending verify" (sdkconfig.defaults'
+    // CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) and must prove itself before
+    // being trusted for the next boot too. Successfully claiming our
+    // ISOBUS address is that proof -- confirm on success; on failure,
+    // proactively roll back to the previous (already-proven) image rather
+    // than waiting for a crash/reset to trigger it, so a bad update fails
+    // fast instead of leaving the device silently non-functional on the
+    // bus for however long until the next power cycle. Both calls are
+    // harmless no-ops on a normal (non-OTA-pending) boot, e.g. after a
+    // factory flash over USB.
+    if (claimed) {
+        esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+        if (ESP_OK != err && ESP_ERR_NOT_SUPPORTED != err) {
+            ESP_LOGW(kTag, "esp_ota_mark_app_valid_cancel_rollback: %s", esp_err_to_name(err));
+        }
+    } else if (internal_ecu) {
+        ESP_LOGE(kTag, "Failed to claim an ISOBUS address on a freshly OTA-flashed image -- rolling back");
+        esp_err_t err = esp_ota_mark_app_invalid_rollback_and_reboot();
+        // Only reached if that call wasn't applicable (e.g. this isn't an
+        // OTA-pending boot at all) -- otherwise the device has already
+        // rebooted into the previous image by this point.
+        ESP_LOGW(kTag, "esp_ota_mark_app_invalid_rollback_and_reboot: %s (continuing without rollback)", esp_err_to_name(err));
+    }
+
     iso::vt_app::init(internal_ecu);
+    net::web_server::init();
 
     int tick = 0;
     bool last_vt_connected = false;

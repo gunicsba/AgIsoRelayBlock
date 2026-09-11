@@ -11,9 +11,12 @@ idf_component_register(
         "isobus/ecu_identity.cpp"
         "isobus/vt_app.cpp"
         "automation/interlock.cpp"
+        "net/wifi_ap.cpp"
+        "net/web_server.cpp"
     INCLUDE_DIRS "."
     REQUIRES AgIsoStack-plus-plus
-    PRIV_REQUIRES esp_hw_support esp_timer esp_app_format
+    PRIV_REQUIRES esp_hw_support esp_timer esp_app_format esp_wifi esp_netif
+                  esp_event nvs_flash esp_http_server app_update pthread
     EMBED_FILES "isobus/object_pool.iop"
 )
 

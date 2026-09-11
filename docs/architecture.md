@@ -137,15 +137,26 @@ bench setup and OTA only.
   (`esp_wifi_get_mac(WIFI_IF_STA, ...)` at boot, formatted `%02X%02X`).
   Deterministic per unit, unique enough for a home/farm network, and
   needs no label lookup beyond the MAC already printed on the module.
-- **AP password:** generated once at first boot (e.g. derived from a
-  device secret + MAC, or a random value written to NVS on first run) and
-  never a fixed/shared default — see requirement N7. Exact scheme is a
-  Phase 8 design detail, not decided yet.
-- **OTA delivery:** ESP-IDF `esp_https_ota` against the dual OTA
-  partition scheme (`ota_0`/`ota_1` + `otadata`), so a failed/incompatible
+- **AP password (implemented 2026-09-11):** a random 12-character
+  password, generated once at first boot and persisted to NVS from then
+  on — never a fixed/shared default, per requirement N7. See
+  [net/wifi_ap.cpp](../firmware/main/net/wifi_ap.cpp). Currently
+  retrievable only via the serial log at boot; a VT-side display (and a
+  way to change it from there) is the natural next step, tracked in
+  [roadmap.md](roadmap.md#phase-7--wifi-ap--ota).
+- **OTA delivery (implemented 2026-09-11):** direct `esp_ota_ops` against
+  the dual OTA partition scheme (`ota_0`/`ota_1` + `otadata`,
+  [partitions.csv](../firmware/partitions.csv)) — **not**
+  `esp_https_ota` as originally planned here: that API is an HTTPS
+  *client* that pulls an image from a remote URL, which doesn't fit
+  "upload a file from the browser" at all. The local web UI's
+  `POST /ota/upload` streams the request body directly into
+  `esp_ota_begin`/`esp_ota_write`/`esp_ota_end`, so a failed/incompatible
   image can be rolled back automatically by the bootloader
   (`esp_ota_mark_app_valid_cancel_rollback` after the new image proves
-  itself, e.g. successfully claims its ISOBUS address).
+  itself by successfully claiming its ISOBUS address, or a proactive
+  `esp_ota_mark_app_invalid_rollback_and_reboot` if it doesn't). See
+  [net/web_server.cpp](../firmware/main/net/web_server.cpp).
 - **Trigger paths:** local web UI upload (WiFi AP or Ethernet) for MVP;
   a remote/hosted update-check flow is explicitly not planned (no cloud
   dependency, per N1/F22).
@@ -168,13 +179,19 @@ bench setup and OTA only.
       behavior on CAN bus-off / VT disconnect (e.g. hold last state vs.
       force all-off) — likely should be configurable per the eventual
       requirements doc.
-- [ ] Decide SoftAP password generation/reset scheme (first-boot random +
-      factory reset, vs. MAC-derived deterministic — deterministic is
-      more convenient but weaker; needs a real decision, not a default).
-- [ ] Confirm ESP32-S3 can run WiFi SoftAP + the TWAI CAN driver + W5500
-      SPI Ethernet concurrently within RAM/CPU budget alongside the
-      AgIsoStack++ VT/AUX-N workload — needs a bench test, not an
-      assumption.
+- [x] Decide SoftAP password generation/reset scheme — first-boot random,
+      persisted to NVS (not MAC-derived/deterministic, which would be
+      guessable from something printed on the module itself). No reset
+      path yet (Phase 8, factory reset). See
+      [roadmap.md](roadmap.md#phase-7--wifi-ap--ota).
+- [x] Confirm ESP32-S3 can run WiFi SoftAP + the TWAI CAN driver
+      concurrently within RAM/CPU budget alongside the AgIsoStack++
+      VT/AUX-N workload — bench-confirmed, but only after fixing a real
+      pthread-stack-vs-WiFi-buffers internal-SRAM conflict this
+      concurrency exposed; see
+      [roadmap.md](roadmap.md#phase-7--wifi-ap--ota) for the failure mode
+      and fix. W5500 SPI Ethernet not included in this check -- it isn't
+      wired up in firmware yet at all.
 - [ ] Pick OTA image signing/verification approach (ESP-IDF secure boot +
       signed app images vs. simpler checksum-and-confirm) — affects
       requirement N7 and how much of ESP-IDF's secure boot chain we adopt.

@@ -58,4 +58,13 @@ bool is_partner_claimed();
 // showing all-off/unchecked while the real state underneath disagreed.
 void resync_display();
 
+// Sets a relay's state from a non-VT control path (currently only the
+// local web UI, see net/web_server.cpp). Funnels through the exact same
+// single source of truth as every other control path (SKM, AUX-N) --
+// respects the DI interlock exactly like a plain toggle press would
+// (never bypasses it; that's reserved for the momentary override path,
+// which the web UI doesn't have a control for). Returns false if refused
+// (interlocked, or the I2C write itself failed). channel is 1-8.
+bool set_relay_remote(int channel, bool state);
+
 }  // namespace iso::vt_app

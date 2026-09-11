@@ -4,12 +4,13 @@ An open-source, DIY-friendly alternative to commercial ISOBUS relay boxes
 (e.g. [ISOBUS Block](https://isobusblock.com/)), built on the off-the-shelf
 **Waveshare ESP32-S3-ETH-8DI-8RO-C** industrial relay module.
 
-> Status: **Early firmware, bench-verified through Phase 4 plus the start
-> of Phase 6.** The device claims an ISOBUS address, uploads a two-page
-> Virtual Terminal object pool, its on-screen soft keys and AUX-N
-> joystick/armrest functions actually switch real relays, and a digital
-> input can now act as a limit-switch interlock for its matching channel
-> -- see [Project Status](#project-status) below.
+> Status: **Early firmware, bench-verified through Phase 4, the start of
+> Phase 6, and Phase 7.** The device claims an ISOBUS address, uploads a
+> two-page Virtual Terminal object pool, its on-screen soft keys and
+> AUX-N joystick/armrest functions actually switch real relays, a digital
+> input can act as a limit-switch interlock for its matching channel, and
+> it now also brings up its own WiFi AP with a local status/control page
+> and OTA firmware updates -- see [Project Status](#project-status) below.
 
 ![Object pool rendered on a real Virtual Terminal: 8 relay indicators in a 2x4 grid, and the 10-key Soft Key Mask (R1-R8 toggle, BZ buzzer, >> next page)](images/main%20screen.png)
 
@@ -120,8 +121,14 @@ bug-fix history):
    both takes design effort and grows the object pool / upload time.
 7. Input → output automation rules — **started**: the first, concrete use
    case (digital input DI{n} as a limit-switch interlock forcing relay
-   channel {n} off) is done; a general VT-configurable rule schema is not.
-8. WiFi AP (`AgIsoBlock-XXXX`) + OTA update path.
+   channel {n} off) is done, plus a "Momentary Override Safety" checkbox
+   letting an operator deliberately bypass it with a momentary button/key
+   when they need to; a general VT-configurable rule schema is not.
+8. ~~WiFi AP (`AgIsoBlock-XXXX`) + OTA update path.~~ — done: always-on
+   SoftAP with a randomly-generated, NVS-persisted password, and a local
+   web page (status + relay toggles mirroring the VT, plus a firmware
+   upload form) with rollback if the new image fails to claim its ISOBUS
+   address.
 9. Polish, diagnostics (DM1).
 
 Known open issues: the tractor's soft key labels sometimes don't visually

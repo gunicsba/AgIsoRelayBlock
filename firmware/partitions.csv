@@ -1,0 +1,14 @@
+# Custom partition table for the 16 MB flash WROOM-1U-N16R8 (see
+# docs/hardware.md). Dual OTA app partitions (Phase 7, docs/roadmap.md#phase-7--wifi-ap--ota)
+# sized at 2 MB each -- the default "two OTA" table's 1 MB slots overflowed
+# once the WiFi/lwIP/HTTP-server stack was linked in (~1.2 MB image), and
+# 2 MB leaves comfortable headroom for that to keep growing without
+# revisiting this file again, still under 5% of the 16 MB chip. Layout
+# otherwise matches ESP-IDF's own partitions_two_ota.csv (nvs/otadata/
+# phy_init sizes and app-partition alignment), just with bigger app slots.
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+otadata,    data, ota,     0xf000,   0x2000,
+phy_init,   data, phy,     0x11000,  0x1000,
+ota_0,      app,  ota_0,   0x20000,  0x200000,
+ota_1,      app,  ota_1,   0x220000, 0x200000,

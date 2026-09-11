@@ -289,6 +289,41 @@ Bench-verified on real hardware (board on COM12):
   above. See
   [../docs/vt-ui-design.md](../docs/vt-ui-design.md#momentary-override-safety-checkbox)
   and [../docs/roadmap.md](../docs/roadmap.md#phase-6--automation-rules).
+- 2026-09-11: Phase 7 (WiFi AP + OTA + local web UI) -- see
+  [net/wifi_ap.cpp](main/net/wifi_ap.cpp) and
+  [net/web_server.cpp](main/net/web_server.cpp). Always-on SoftAP
+  (`AgIsoBlock-XXXX`, random NVS-persisted password); a single-page web UI
+  mirroring the VT (poll + toggle each relay, see DI interlock status) at
+  `/`, plus an OTA upload form at `/ota` that streams straight into the
+  inactive partition via `esp_ota_ops` (not `esp_https_ota` -- that's an
+  HTTPS *client* for pulling from a remote URL, the wrong shape for a
+  browser upload). Required switching to a custom dual-OTA partition table
+  ([partitions.csv](partitions.csv), 2 MB slots) since the WiFi/HTTP stack
+  overflowed the default table's 1 MB slots (~1.2 MB image).
+
+  Hit a real, 100%-reproducible crash getting there: `E (...) pthread:
+  Failed to create task!` immediately followed by `abort()`, every single
+  boot, right after the SoftAP came up. Root cause: WiFi's own buffers
+  claim a large, fixed chunk of internal SRAM, which collided with
+  AgIsoStack++'s worker threads' 64 KB stacks
+  (`CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT`, from the earlier Phase 2
+  stack-overflow fix) -- there wasn't enough internal RAM left for both.
+  Fixed by redirecting pthread stacks to PSRAM
+  (`esp_pthread_set_cfg()` with `stack_alloc_caps = MALLOC_CAP_SPIRAM |
+  MALLOC_CAP_8BIT`, `app_main.cpp`, right before `ecu_identity::init()`
+  spawns those threads) -- this board has 8 MB of PSRAM sitting mostly
+  idle, and none of that stack usage needs internal RAM specifically.
+  Bench-confirmed clean boot after the fix: SoftAP up, ISOBUS address
+  claimed (~360 ms), web server started, no crash.
+
+  OTA rollback wired to the same address-claim check already used for the
+  boot LED/logging: confirms the image valid
+  (`esp_ota_mark_app_valid_cancel_rollback`) on success, or proactively
+  rolls back (`esp_ota_mark_app_invalid_rollback_and_reboot`) on failure,
+  rather than waiting for a crash to trigger the bootloader's own
+  rollback. See
+  [../docs/roadmap.md](../docs/roadmap.md#phase-7--wifi-ap--ota) and
+  [../docs/architecture.md](../docs/architecture.md#wifi-ap--ota-planned).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

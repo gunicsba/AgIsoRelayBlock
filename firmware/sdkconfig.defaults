@@ -20,3 +20,21 @@ CONFIG_SPIRAM_SPEED_80M=y
 # stack overflow into other memory is a much worse failure mode than a
 # few extra KB sitting idle per thread.
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=65536
+
+# Phase 7 (docs/roadmap.md#phase-7--wifi-ap--ota): dual OTA app partitions
+# (ota_0/ota_1 + otadata) instead of the single-app default, so a new
+# image can be flashed to the inactive slot and rolled back automatically
+# if it doesn't prove itself -- see net/web_server.cpp. Custom table
+# (partitions.csv), not the default "two OTA" layout: the default's 1 MB
+# slots overflowed once the WiFi/lwIP/HTTP-server stack linked in
+# (~1.2 MB image) -- 2 MB slots leave real headroom, still under 5% of
+# the 16 MB flash chip.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Required for esp_ota_mark_app_valid_cancel_rollback() / the automatic
+# revert-on-repeated-boot-failure behavior net/ota_web.cpp relies on --
+# without this, a bad OTA image would just stay booted forever instead of
+# falling back to the last-known-good one.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

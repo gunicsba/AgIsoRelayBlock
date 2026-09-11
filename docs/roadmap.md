@@ -485,17 +485,57 @@ that actually motivated this phase, rather than the fully generic
 
 ## Phase 7 — WiFi AP & OTA
 
-- [ ] Bring up always-on SoftAP `AgIsoBlock-XXXX` (XXXX = last 2 MAC
-      bytes), independent of Ethernet/station state.
-- [ ] Decide + implement AP password generation scheme (see
-      [architecture.md](architecture.md#wifi-ap--ota-planned) open
-      question) — no fixed/shared default password.
-- [ ] Minimal local web UI: firmware upload form + read-only status.
-- [ ] Wire up `esp_https_ota` against dual OTA partitions with rollback
-      (new image must claim its ISOBUS address successfully before being
-      marked valid, else auto-revert).
-- [ ] Confirm WiFi AP + TWAI + (optional) W5500 can run concurrently
-      without starving the ISOBUS/VT tasks (bench test).
+- [x] Bring up always-on SoftAP `AgIsoBlock-XXXX` (XXXX = last 2 MAC
+      bytes), independent of Ethernet/station state — see
+      [net/wifi_ap.cpp](../firmware/main/net/wifi_ap.cpp).
+- [x] AP password generation scheme decided and implemented: a random
+      12-character password (58-symbol alphabet, no ambiguous characters),
+      generated once on first boot and persisted to NVS from then on —
+      never a fixed/shared default (N7). Currently the *only* way to
+      retrieve it is the serial log at boot (`wifi_ap: SoftAP up:
+      SSID=... password=...`); see the follow-up bullet below for the VT
+      display work that replaces this.
+- [x] Minimal local web UI: firmware upload form + read-only status --
+      actually shipped as read/write (mirrors the VT's relay toggles too,
+      not just status), a deliberate scope increase past this line's
+      original "read-only" per direct request rather than waiting for the
+      Phase 9 "richer" version. See
+      [net/web_server.cpp](../firmware/main/net/web_server.cpp).
+- [x] Wire up OTA against dual OTA partitions with rollback (new image
+      must claim its ISOBUS address successfully before being marked
+      valid, else auto-revert) -- implemented as a local-upload flow via
+      `esp_ota_ops` directly (`POST /ota/upload` streams the raw `.bin`
+      body straight into the inactive partition), **not**
+      `esp_https_ota` as this section originally said: that API is an
+      HTTPS *client* that pulls an image from a remote URL, the wrong
+      shape for "upload a file from the browser" (see
+      [architecture.md](architecture.md#wifi-ap--ota-planned), corrected
+      there too). Required switching from the default single-app
+      partition table to a custom dual-OTA one
+      ([partitions.csv](../firmware/partitions.csv), 2 MB slots -- see
+      that file's own comment for why not the default table's 1 MB) and
+      enabling `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`
+      (sdkconfig.defaults). `app_main.cpp` confirms the image valid
+      (`esp_ota_mark_app_valid_cancel_rollback`) on a successful address
+      claim, or proactively rolls back
+      (`esp_ota_mark_app_invalid_rollback_and_reboot`) on failure, rather
+      than waiting for a crash to trigger the bootloader's own rollback.
+- [x] Confirm WiFi AP + TWAI can run concurrently without starving the
+      ISOBUS/VT tasks -- bench-confirmed, but only after fixing a real
+      bug the concurrency itself exposed: enabling WiFi consumes a large,
+      fixed chunk of internal SRAM for its own buffers, which collided
+      with AgIsoStack++'s worker threads' 64 KB stacks
+      (`CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT`, needed since the Phase 2
+      pthread-stack-overflow fix) -- `E (...) pthread: Failed to create
+      task!` immediately followed by `abort()`, every single boot,
+      100% reproducible. Fixed by redirecting pthread stacks to PSRAM
+      (`esp_pthread_set_cfg()` with `stack_alloc_caps = MALLOC_CAP_SPIRAM
+      | MALLOC_CAP_8BIT`, called once in `app_main.cpp` right before
+      `ecu_identity::init()` spawns AgIsoStack++'s threads) -- this board
+      has 8 MB of PSRAM sitting mostly idle, and none of that stack usage
+      needs to be DMA-capable or in internal RAM specifically.
+      W5500 Ethernet concurrency not tested (not wired up yet at all --
+      separate from this phase's scope).
 
 ## Phase 8 — Robustness & polish
 

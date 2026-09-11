@@ -306,6 +306,10 @@ bool is_partner_claimed() {
     return g_vt_partner && g_vt_partner->get_address_valid();
 }
 
+bool set_relay_remote(int channel, bool state) {
+    return apply_relay_state(channel, state);
+}
+
 // A fresh VT connection means a fresh object pool upload, which resets
 // every fill/label to the static pool's defaults -- but our own state
 // (relay outputs, DI interlock status, the override checkbox) isn't
