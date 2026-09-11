@@ -94,14 +94,14 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
         }
     }
 
-    if (event.objectID != object_pool_ids::kSoftkeyBack &&
-        event.keyEvent != isobus::VirtualTerminalClient::KeyActivationCode::ButtonUnlatchedOrReleased) {
-        return;  // everything below (including the back key) acts on release
+    if (event.keyEvent != isobus::VirtualTerminalClient::KeyActivationCode::ButtonUnlatchedOrReleased) {
+        return;  // everything below (including the back key) acts on release only
     }
 
     if (event.objectID == object_pool_ids::kSoftkeyBack) {
-        g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
-                                              object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask);
+        bool ok = g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
+                                                        object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask);
+        ESP_LOGI(kTag, "SK back: switch to page 1 -> %s", ok ? "sent" : "FAILED to send");
         return;
     }
 
@@ -119,9 +119,20 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
     }
 
     if (event.objectID == object_pool_ids::softkey_id(10)) {
-        g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
-                                              object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask2);
+        bool ok = g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
+                                                        object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask2);
+        ESP_LOGI(kTag, "SK10: switch to page 2 -> %s", ok ? "sent" : "FAILED to send");
     }
+}
+
+// Diagnostic only: confirms whether the VT actually applied a soft key
+// mask change (vs. our send call merely succeeding at the CAN-transmit
+// level) -- useful for telling apart "we never sent it" from "we sent it
+// but the VT rejected/ignored it".
+void handle_change_soft_key_mask_event(const isobus::VirtualTerminalClient::VTChangeSoftKeyMaskEvent& event) {
+    ESP_LOGI(kTag, "VT confirms soft key mask now %u (mask %u) missingObjects=%d maskOrChildHasErrors=%d anyOtherError=%d",
+             event.softKeyMaskObjectID, event.dataOrAlarmMaskObjectID, event.missingObjects,
+             event.maskOrChildHasErrors, event.anyOtherError);
 }
 
 // AUX-N: both function variants per channel are declared non-latching/
@@ -189,6 +200,7 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
     g_vt_client->set_object_pool(0, object_pool_iop_start, pool_size, pool_version);
     g_vt_client->get_vt_soft_key_event_dispatcher().add_listener(handle_soft_key_event);
     g_vt_client->get_auxiliary_function_event_dispatcher().add_listener(handle_aux_function_event);
+    g_vt_client->get_vt_change_soft_key_mask_event_dispatcher().add_listener(handle_change_soft_key_mask_event);
     g_vt_client->initialize(true);
     ESP_LOGI(kTag, "VT client started, waiting for a Virtual Terminal on the bus...");
 }

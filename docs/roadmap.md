@@ -208,6 +208,23 @@ review:
       per-channel state so pressing either one for a channel doesn't leave
       the other out of sync) plus a back key ("`<<`"). See
       [vt-ui-design.md](vt-ui-design.md#soft-key-masks-two-pages-reached-via-a-nextback-key).
+
+      First attempt had a real logic bug: the back key's event guard used
+      `objectID != kSoftkeyBack && keyEvent != Release` to return early,
+      which (De Morgan's) actually let the back key through on *every*
+      event type (press, held-repeat, and release), sending the mask-
+      switch command 2-3 times per single press while everything else
+      only fired once on release. Fixed by dropping the exemption
+      entirely -- the back key needs no different treatment than SK9/SK10,
+      all three act on release only.
+
+      Bench-confirmed after the fix: both directions send exactly once and
+      the underlying page switch takes effect immediately (new page's keys
+      respond correctly right away) -- but the soft key *labels* sometimes
+      don't visually redraw until another key is pressed. Reads as a
+      repaint timing quirk on the VT's own side (the switch is confirmed
+      sent and applied, this is purely a rendering lag), not something
+      firmware controls.
 - [x] Verify manual VT control and AUX-N control don't fight each other
       (e.g. last-write-wins, or explicit precedence rule — decide and
       document) — both paths funnel through the same `apply_relay_state`

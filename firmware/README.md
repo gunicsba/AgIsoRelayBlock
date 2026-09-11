@@ -128,6 +128,27 @@ Bench-verified on real hardware (board on COM12):
   (creating a new CF object), the cached entry goes stale with no
   recovery path short of restarting the whole VT app. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
+- 2026-09-11: fixed a real logic bug in the new SKM page-2 back key: its
+  event guard used `objectID != kSoftkeyBack && keyEvent != Release` to
+  decide whether to return early, which (De Morgan's) actually let the
+  back key through on *every* event type instead of release only, sending
+  the mask-switch command 2-3 times per press. Dropped the exemption --
+  the back key needs no different treatment than SK9/SK10. Bench-confirmed
+  after the fix: both page-switch directions now send exactly once and
+  the underlying switch applies immediately, though the soft key *labels*
+  sometimes don't visually redraw until another key is pressed -- reads as
+  a VT-side repaint timing quirk, not something firmware controls (the
+  switch is confirmed sent and the new page's keys already respond
+  correctly right away). Also added a `VTChangeSoftKeyMaskEvent` listener
+  purely for diagnostic logging.
+
+  Visual confirmation from the bench: the Data Mask's 2x4 indicator grid
+  and both SKM pages render correctly --
+  ![main screen: 2x4 relay indicator grid and SKM page 1 (R1-R8 underlined, BZ, >>)](../images/main%20screen.png)
+  -- and all 17 AUX-N functions are recognized by the VT, with the
+  underline convention correctly distinguishing the toggle variant from
+  the plain momentary one --
+  ![AUX-N assignment list showing R7/R8 underlined (toggle) and R1/R2 plain (momentary), "17 function(s), 20 input(s) available"](../images/aux%20assignment.png).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

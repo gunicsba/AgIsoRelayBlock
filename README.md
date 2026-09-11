@@ -4,12 +4,13 @@ An open-source, DIY-friendly alternative to commercial ISOBUS relay boxes
 (e.g. [ISOBUS Block](https://isobusblock.com/)), built on the off-the-shelf
 **Waveshare ESP32-S3-ETH-8DI-8RO-C** industrial relay module.
 
-> Status: **Early firmware, bench-verified through Phase 3.** The device
-> claims an ISOBUS address, uploads a Virtual Terminal object pool, and its
-> on-screen soft keys actually switch real relays -- see
+> Status: **Early firmware, bench-verified through Phase 4.** The device
+> claims an ISOBUS address, uploads a two-page Virtual Terminal object
+> pool, and both its on-screen soft keys and AUX-N joystick/armrest
+> functions actually switch real relays -- see
 > [Project Status](#project-status) below.
 
-![Object pool rendered on a real Virtual Terminal: 8 relay indicators (R1/R2 shown ON) and a 9-key Soft Key Mask](images/test%20iop.png)
+![Object pool rendered on a real Virtual Terminal: 8 relay indicators in a 2x4 grid, and the 10-key Soft Key Mask (R1-R8 toggle, BZ buzzer, >> next page)](images/main%20screen.png)
 
 ## Why
 
@@ -52,7 +53,7 @@ Full details and open questions in [docs/hardware.md](docs/hardware.md).
 | ISO 11783 ECU, address claim | Yes | Yes ([docs/isobus-protocol.md](docs/isobus-protocol.md)) |
 | Shows up on tractor's Virtual Terminal | Yes | Yes (VT client + object pool, see [docs/vt-ui-design.md](docs/vt-ui-design.md)) |
 | Name each channel, pick an icon, from the terminal | Yes | Yes (VT input objects, no PC/app needed) |
-| Assign any channel to a joystick/armrest button (AUX-N) | Yes | Yes (9 AUX-N functions: 8 relays + buzzer) |
+| Assign any channel to a joystick/armrest button (AUX-N) | Yes | Yes (17 AUX-N functions: 8 relays × toggle+momentary variants + buzzer) |
 | Sensor input → automatic relay control, configured on-screen | Yes (8ch model) | Yes (rule engine, VT-configurable) |
 | Runs on 12 V / 24 V tractor power | Yes | Yes (board supports 7–36 V) |
 | Industrial isolation (opto + power) | Yes | Yes (board provides this in hardware) |
@@ -86,7 +87,7 @@ Full write-up in [docs/architecture.md](docs/architecture.md).
 
 ## Project status
 
-Bench-verified through Phase 3 of [docs/roadmap.md](docs/roadmap.md) on
+Bench-verified through Phase 4 of [docs/roadmap.md](docs/roadmap.md) on
 real hardware (see [firmware/README.md](firmware/README.md) for the full
 detail and bug-fix history):
 
@@ -94,22 +95,31 @@ detail and bug-fix history):
    Waveshare's own diagram (I²C SDA/SCL were swapped) along the way.
 2. ~~Get AgIsoStack++ building for ESP32-S3 (TWAI driver) with a "hello
    ISOBUS" address-claim-only example.~~ — done; claims a real address
-   against a live bus in ~350ms.
+   against a live bus in ~350ms, now stable across reboots too.
 3. ~~Minimal VT object pool: 8 on/off indicators, no naming yet.~~ — done;
    hand-encoded (no external pool designer tool used) and confirmed
    rendering correctly on a real VT.
 4. ~~Wire relay/DI GPIOs into the stack.~~ — relays done (on-screen soft
-   keys toggle real relays); digital input debounce + on-screen display
-   still open.
-5. AUX-N support — next up.
-6. On-screen channel naming/icon picker + persistence.
+   keys toggle real relays, across two Soft Key Mask pages); digital input
+   debounce + on-screen display still open.
+5. ~~AUX-N support.~~ — done: 17 Auxiliary Function Type 2 objects (a
+   toggle + a momentary-invert-and-restore variant per relay channel, plus
+   a momentary buzzer trigger), confirmed rendering and driving relays on
+   a real VT.
+6. On-screen channel naming/icon picker + persistence — next up.
 7. Input → output automation rules.
 8. WiFi AP (`AgIsoBlock-XXXX`) + OTA update path.
 9. Polish, diagnostics (DM1).
 
-Known open issues: the buzzer pulse (SK9) is audible but very quiet; the
-implement sometimes disappears from the VT and needs a VT restart (traced
-to the VT's own connection handling, not this firmware).
+Known open issues: the tractor's soft key labels sometimes don't visually
+refresh when switching between the two SKM pages until another key is
+pressed, even though the underlying page switch takes effect immediately
+(reads as a VT-side repaint quirk, not a firmware bug -- the switch
+command is confirmed sent and the new page's keys already respond
+correctly); the implement sometimes disappears from the VT and needs a VT
+restart (traced to a likely gap in AgIsoStack++'s own vendored VT server
+reference implementation, not this firmware -- see
+[docs/roadmap.md](docs/roadmap.md#phase-3--minimal-vt-presence)).
 
 ## Disclaimer
 
