@@ -52,21 +52,23 @@ Bench-verified on real hardware (board on COM12):
   (reproduced as that VT's control function going offline -- confirmed to
   be existing behavior on the VT side, independent of our pool content).
 - 2026-09-11: Phase 4 AUX-N implemented -- 17 Auxiliary Function Type 2
-  objects (latching + momentary variant per relay channel, plus a
-  momentary buzzer function; see `handle_aux_function_event` in
+  objects, all declared non-latching/momentary at the protocol level (a
+  toggle + a hold-to-run variant per relay channel, plus a momentary
+  buzzer function; see `handle_aux_function_event` in
   [vt_app.cpp](main/isobus/vt_app.cpp)). Builds and boots clean on the
   bench (no crash, no parse errors). Used `AuxiliaryFunctionType2`, not
   the `AuxiliaryFunctionType1` shown in every vendored library example --
   AgIsoStack++'s own parser logs Type 1 as ignored by VT version 3+
-  terminals for real assignment. End-to-end assignment (an actual
-  joystick button mapped and driving a relay) is still unconfirmed by an
-  actual bench test, but the design was checked against the target
-  hardware constraint: most tractors only offer momentary push-buttons on
-  the joystick/armrest, and per ISO 11783-6 that's exactly what the
-  latching-vs-momentary split above is for -- a momentary button assigned
-  to the *latching* function should toggle (tractor's own AUX-N input
-  handling turns the press into a flip), assigned to the *momentary*
-  function it should be hold-to-run.
+  terminals for real assignment.
+- 2026-09-11: revised the AUX-N latching design after real-world tractor
+  feedback -- most tractors only offer momentary push-buttons, and a
+  tractor's own assignment menu generally only offers type-matched
+  input/function pairs, so a function declared as the protocol's actual
+  `BooleanLatchingOnOff` type risked not even being assignable to a real
+  button. Both variants are now declared momentary at the protocol level;
+  the toggle variant's "latch and stay" behavior is produced in firmware
+  instead (edge-triggered: flips the relay on each rising edge, ignores
+  release), so it still works with a genuinely momentary physical button.
 - 2026-09-11: UI readability pass based on bench feedback -- Data Mask
   indicators bumped from 32x32 to 60x60 and reflowed into a 4-per-row x 2
   row grid (were "barely readable" in a single row of small boxes); label

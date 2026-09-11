@@ -42,8 +42,10 @@ T_LINE_ATTRIBUTES = 24
 T_FILL_ATTRIBUTES = 25
 T_AUXILIARY_FUNCTION_TYPE_2 = 31
 
-# AuxiliaryFunctionType2::FunctionType (ISO 11783-6:2018 table J.5) values
-# actually used here.
+# AuxiliaryFunctionType2::FunctionType (ISO 11783-6:2018 table J.5) values.
+# AUX_FUNC_LATCHING_ON_OFF (0) is deliberately unused: see the comment in
+# build_pool() on why every function here is declared momentary instead,
+# even the one that ends up behaving like a latch.
 AUX_FUNC_LATCHING_ON_OFF = 0
 AUX_FUNC_NON_LATCHING_MOMENTARY = 2
 
@@ -305,23 +307,29 @@ def build_pool():
     objects.append(make_data_mask(data_mask_children))
 
     # --- Auxiliary Function Type 2 objects: AUX-N joystick/armrest
-    # assignment. Two variants per relay channel (latching + momentary) so
-    # the operator picks whichever behavior fits their equipment in the
-    # tractor's own AUX-N assignment menu; our own device applies whatever
-    # boolean value the assigned input reports directly to the relay in
-    # both cases; the "latch" vs. "momentary" feel comes entirely from how
-    # the input device itself reports that value over time (sustained vs.
-    # only-while-held), not from any extra logic on our side. Not children
-    # of anything -- see make_auxiliary_function_type2()'s docstring.
+    # assignment. Two variants per relay channel, BOTH declared as
+    # non-latching/momentary FunctionType -- most tractors only expose
+    # momentary (spring-return) physical buttons on the joystick/armrest,
+    # and a tractor's own AUX-N assignment menu generally only offers
+    # inputs and functions of matching type, so declaring one variant as
+    # "latching" risked it not even being assignable to a real button (or
+    # working inconsistently across tractors that *are* lenient about it).
+    # Instead, the "latching" (toggle-and-stay) *result* the operator wants
+    # is produced by our own firmware: one variant mirrors the input value
+    # straight to the relay (hold-to-run), the other toggles the relay on
+    # each rising edge of an otherwise-identical momentary input (see
+    # handle_aux_function_event() in vt_app.cpp). Not children of anything
+    # -- see make_auxiliary_function_type2()'s docstring.
     for ch in range(1, 9):
-        # Latching variant gets its own "R{ch}#" label -- the "#" marks it
-        # as the *latching* (toggle-and-stay) variant, distinct from the
-        # plain "R{ch}" momentary (hold-to-run) variant below, which
-        # reuses the Data Mask's own label.
+        # "Toggle" variant gets its own "R{ch}#" label -- the "#" marks it
+        # as the one that latches (toggles and stays), distinct from the
+        # plain "R{ch}" hold-to-run variant below, which reuses the Data
+        # Mask's own label. Both are declared non-latching at the protocol
+        # level; only our own handling of the toggle variant differs.
         latch_label_id = aux_latch_label_id(ch)
         objects.append(make_output_string(latch_label_id, 16, 10, "R{}#".format(ch)))
         objects.append(make_auxiliary_function_type2(
-            aux_latch_function_id(ch), AUX_FUNC_LATCHING_ON_OFF,
+            aux_latch_function_id(ch), AUX_FUNC_NON_LATCHING_MOMENTARY,
             children=[(latch_label_id, 2, 2)]))
 
         objects.append(make_auxiliary_function_type2(

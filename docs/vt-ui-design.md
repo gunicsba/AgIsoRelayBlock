@@ -68,37 +68,38 @@ VTs that can't fit a 9th key.
 
 ## AUX-N functions (17 total)
 
-Each relay channel publishes **two** Auxiliary Function Type 2 objects —
-one latching, one momentary — so the operator picks whichever behavior
-fits their equipment in the tractor's own native AUX-N assignment menu
-(toggle for lights/pumps/fans, hold-to-run for spool-valve-style loads).
-This is a deliberate choice, not an oversight: since a function's type is
-fixed at pool-authoring time (can't be changed per assignment), and the
-hardware is generic relay contacts that could drive either kind of load,
-offering both lets the assignment-time choice live where it belongs — with
-the person wiring up the equipment — at the cost of a longer list in the
-tractor's assignment menu.
+Each relay channel publishes **two** Auxiliary Function Type 2 objects, so
+the operator picks whichever behavior fits their equipment in the
+tractor's own native AUX-N assignment menu: hold-to-run for spool-valve-
+style loads, or toggle-and-stay for lights/pumps/fans. This is a
+deliberate choice, not an oversight: the hardware is generic relay
+contacts that could drive either kind of load, so offering both lets the
+assignment-time choice live where it belongs — with the person wiring up
+the equipment — at the cost of a longer list in the tractor's assignment
+menu.
+
+**Both variants are declared `BooleanNonLatchingIncreaseValue` (2) at the
+protocol level — neither uses `BooleanLatchingOnOff` (0).** Most tractors
+only expose momentary (spring-return) physical buttons on the
+joystick/armrest, and a tractor's own AUX-N assignment menu generally only
+offers inputs and functions of matching type — declaring a function as
+latching risks it not even showing up as assignable to a real momentary
+button (or behaving inconsistently across tractors that are lenient about
+the mismatch). So the "latching" *result* one of the two variants
+produces is implemented in our own firmware instead of relied on from the
+protocol: it toggles the relay on each rising edge of the (declared
+momentary) input and ignores the release, rather than mirroring the input
+value straight through.
 
 | # | Function | Type 2 `FunctionType` | Behavior | Label/Icon |
 |---|---|---|---|---|
-| 1–8 | Relay channel 1–8, latching | `BooleanLatchingOnOff` (0) | Mirrors the input's reported value directly to the relay; since a latching input reports its own sustained position, this reads as toggle-on/toggle-off | Text label **"R{n}#"** for now (own dedicated label object, not shared with anything else) — the trailing `#` marks it as the latching variant. Shared relay pictogram + `#` mark once icons exist (Phase 5) |
-| 9–16 | Relay channel 1–8, momentary | `BooleanNonLatchingIncreaseValue` (2) | Same direct mirroring, but a momentary input reports 1 only while held — so the relay is on only while the mapped button is held | Text label **"R{n}"**, plain — reuses the same label object as that channel's Data Mask indicator |
-| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Same momentary mirroring; matches SK9's pulse behavior on rising edge | Reuses SK9's "Bz" label |
+| 1–8 | Relay channel 1–8, toggle | `BooleanNonLatchingIncreaseValue` (2) | Firmware toggles the relay on each press (rising edge), ignores release — a momentary button acts like a latch | Text label **"R{n}#"** for now (own dedicated label object, not shared with anything else) — the trailing `#` marks it as the toggle variant. Shared relay pictogram + `#` mark once icons exist (Phase 5) |
+| 9–16 | Relay channel 1–8, hold-to-run | `BooleanNonLatchingIncreaseValue` (2) | Firmware mirrors the input value straight to the relay — on only while the mapped button is held | Text label **"R{n}"**, plain — reuses the same label object as that channel's Data Mask indicator |
+| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Edge-triggered pulse on rising edge; matches SK9's pulse behavior | Reuses SK9's "Bz" label |
 
-**Why the device doesn't need different logic for latching vs. momentary:**
-per ISO 11783-6, a latching input reports its own persisted 0/1 state on
-change; a momentary (non-latching) input reports 1 only while physically
-held and 0 on release. Our device applies whatever boolean value it
-receives straight to the relay in both cases (`relay_driver::set_relay`) —
-the "feel" comes entirely from how the *input device* reports its value
-over time, not from extra logic on our side. **Checked against a real
-target-hardware constraint** (not yet bench-tested end-to-end): most
-tractors only offer momentary (spring-return) physical buttons on the
-joystick/armrest — assigning one to the *latching* function should make
-the tractor's own AUX-N input handling translate each press into a toggle
-(flip-and-stay); assigning it to the *momentary* function should make it
-hold-to-run instead. That's exactly the two behaviors this design set out
-to offer; an actual joystick-button assignment test is still outstanding.
+See `handle_aux_function_event` in
+[vt_app.cpp](../firmware/main/isobus/vt_app.cpp) for the actual edge
+detection / mirroring logic.
 
 All 17 are advertised unconditionally; whether any physical joystick/armrest
 button actually gets mapped to one is entirely up to the tractor's own

@@ -133,17 +133,24 @@ review:
 ## Phase 4 — AUX-N
 
 - [x] Publish 17 Auxiliary Function Type 2 objects: 8 relay channels ×
-      (latching + momentary variant) + 1 momentary buzzer trigger — see
+      (toggle + hold-to-run variant) + 1 momentary buzzer trigger, all
+      declared non-latching/momentary at the protocol level — see
       [vt-ui-design.md](vt-ui-design.md#aux-n-functions-17-total) for why
-      two variants per channel, and why Type 2 (not the Type 1 shown in
-      every vendored library example — AgIsoStack++'s own parser flags
-      Type 1 as ignored by VT version 3+ terminals for real assignment).
+      two variants per channel, why neither actually uses the "latching"
+      `FunctionType` (most tractors only expose momentary buttons, and
+      would likely refuse to assign a latching-typed function to one), and
+      why Type 2 (not the Type 1 shown in every vendored library example —
+      AgIsoStack++'s own parser flags Type 1 as ignored by VT version 3+
+      terminals for real assignment).
 - [x] Handle Auxiliary Input Status messages to drive relays (and pulse
       the buzzer) from a tractor joystick/armrest button, once assigned
       via the tractor's own AUX-N menu — see
       [vt_app.cpp](../firmware/main/isobus/vt_app.cpp)'s
-      `handle_aux_function_event`. Builds clean and boots without error on
-      the bench; end-to-end assignment (a real joystick button actually
+      `handle_aux_function_event`. The toggle variant is edge-triggered in
+      firmware (flips the relay on each rising edge, ignores release) so a
+      momentary button produces latching behavior without relying on the
+      protocol's own latching type. Builds clean and boots without error
+      on the bench; end-to-end assignment (a real joystick button actually
       mapped and driving a relay) still needs a retest once the bench's
       joystick/VT connectivity is stable (see the Phase 3 known issues).
 - [x] Verify manual VT control and AUX-N control don't fight each other

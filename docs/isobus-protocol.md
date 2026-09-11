@@ -78,11 +78,13 @@ See [vt-ui-design.md](vt-ui-design.md) for the concrete main-screen layout
 
 This is the "assign to a joystick/armrest button" feature:
 
-- The device advertises **17 Auxiliary Function Type 2 objects**: a
-  latching + a momentary variant per relay channel (16) plus one
-  non-latching/momentary boolean for the buzzer trigger — see
+- The device advertises **17 Auxiliary Function Type 2 objects**, all
+  declared non-latching/momentary at the protocol level: a toggle
+  (latches in firmware, not via the wire type) + a hold-to-run variant per
+  relay channel (16), plus one momentary buzzer trigger — see
   [vt-ui-design.md](vt-ui-design.md#aux-n-functions-17-total) for the full
-  list, why two variants per channel, and why Type 2 rather than Type 1.
+  list, why two variants per channel, why neither uses the actual
+  "latching" `FunctionType`, and why Type 2 rather than Type 1.
 - Physical **Auxiliary Input** devices (tractor joystick, armrest buttons)
   advertise their own Auxiliary Input objects.
 - The operator maps a function → input using the *tractor's* native AUX-N

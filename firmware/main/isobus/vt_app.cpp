@@ -65,19 +65,32 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
     }
 }
 
-// AUX-N: a latching input reports its own persisted 0/1 state on change; a
-// momentary input reports 1 only while held, 0 on release. Both function
-// variants apply the reported value straight to the relay -- the "feel"
-// comes entirely from how the assigned input device reports its value
-// over time, not from anything we do differently here (see
-// docs/vt-ui-design.md#aux-n-functions-17-total).
+// AUX-N: both function variants per channel are declared non-latching/
+// momentary at the protocol level (most tractors only expose momentary
+// physical buttons, and a tractor's assignment menu generally only offers
+// type-matched input/function pairs -- see the comment in
+// gen_object_pool.py's build_pool() for why). The "latching" *result* for
+// one of the two variants is therefore produced here, in firmware, not by
+// the declared function type: toggle on each rising edge, ignore the
+// release. The other variant mirrors the input value straight to the
+// relay (hold-to-run) -- see docs/vt-ui-design.md#aux-n-functions-17-total.
 void handle_aux_function_event(const isobus::VirtualTerminalClient::AuxiliaryFunctionEvent& event) {
     const bool state = (event.value1 != 0);
     const uint16_t function_id = event.function.functionObjectID;
 
     for (int ch = 1; ch <= 8; ++ch) {
-        if (function_id == object_pool_ids::aux_latch_function_id(ch) ||
-            function_id == object_pool_ids::aux_momentary_function_id(ch)) {
+        if (function_id == object_pool_ids::aux_latch_function_id(ch)) {
+            // Edge-triggered toggle: flip the relay on press, do nothing
+            // on release, so a momentary button acts like a latch.
+            static bool last_latch_input_state[9] = {};  // index 1-8, [0] unused
+            if (state && !last_latch_input_state[ch]) {
+                apply_relay_state(ch, !io::relay_driver::get_relay(ch));
+            }
+            last_latch_input_state[ch] = state;
+            return;
+        }
+        if (function_id == object_pool_ids::aux_momentary_function_id(ch)) {
+            // Direct mirror: relay follows the input's held/released state.
             if (io::relay_driver::get_relay(ch) != state) {
                 apply_relay_state(ch, state);
             }
