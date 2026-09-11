@@ -11,6 +11,8 @@ constexpr uint16_t kWorkingSet = 1000;
 constexpr uint16_t kDataMask = 1100;
 constexpr uint16_t kSoftKeyMask = 1200;
 constexpr uint16_t kSoftKeyMask2 = 1201;
+constexpr uint16_t kTitleString = 1101;
+constexpr uint16_t kTitleStringMaxChars = 44;
 
 // channel: 1-8
 inline uint16_t relay_rect_id(int channel) { return 1110 + channel; }

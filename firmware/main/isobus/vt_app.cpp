@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "automation/interlock.hpp"
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "io/buzzer_driver.hpp"
 #include "io/relay_driver.hpp"
@@ -13,7 +14,6 @@
 #include "isobus/isobus/can_partnered_control_function.hpp"
 #include "isobus/isobus/isobus_virtual_terminal_client.hpp"
 #include "isobus/object_pool_ids.hpp"
-#include "isobus/utility/iop_file_interface.hpp"
 
 // Symbols for the object pool binary embedded via main/CMakeLists.txt's
 // EMBED_FILES (linker-generated, matching the object pool's filename).
@@ -226,14 +226,23 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
     g_vt_partner = vt_partner;
 
     const uint32_t pool_size = static_cast<uint32_t>(object_pool_iop_end - object_pool_iop_start);
-    // Content-hashed, not hand-bumped: the VT caches pools by this label,
-    // so a stale hardcoded string here would make it silently keep serving
-    // an old cached pool after we change the generator.
-    const std::string pool_version =
-        isobus::IOPFileInterface::hash_object_pool_to_version(object_pool_iop_start, pool_size);
 
+    // Deliberately no version label: a non-empty one makes the client ask
+    // the VT (Get Versions) whether it already has this pool cached before
+    // uploading, so it can skip straight to Load Version instead -- but
+    // that adds a round trip (Get Versions / Get Versions Response / Load
+    // Version) that's unconditional once a label is set, and a VT that
+    // never answers Get Versions leaves the client stuck retrying forever
+    // with no way to fall back (confirmed via a live capture -- see
+    // docs/roadmap.md#phase-3--minimal-vt-presence). An empty label skips
+    // that whole exchange and goes straight to uploading
+    // (isobus_virtual_terminal_client.cpp's WaitForGetHardwareResponse
+    // handling branches on this exact field). The cost is a full pool
+    // re-upload on every connection instead of a cache hit, which is free
+    // at ~1.6 KB -- pool caching only pays off for large pools anyway, and
+    // Phase 5 (which would grow this pool) is deferred.
     g_vt_client = std::make_shared<isobus::VirtualTerminalClient>(vt_partner, internal_ecu);
-    g_vt_client->set_object_pool(0, object_pool_iop_start, pool_size, pool_version);
+    g_vt_client->set_object_pool(0, object_pool_iop_start, pool_size);
     g_vt_client->get_vt_soft_key_event_dispatcher().add_listener(handle_soft_key_event);
     g_vt_client->get_auxiliary_function_event_dispatcher().add_listener(handle_aux_function_event);
     g_vt_client->get_vt_change_soft_key_mask_event_dispatcher().add_listener(handle_change_soft_key_mask_event);
@@ -255,6 +264,22 @@ bool is_connected() {
 // in isobus_virtual_terminal_client.cpp).
 bool is_partner_claimed() {
     return g_vt_partner && g_vt_partner->get_address_valid();
+}
+
+void send_version_info() {
+    if (!g_vt_client) {
+        return;
+    }
+    std::string title = std::string("AgIsoRelayBlock ") + esp_app_get_description()->version;
+    // Only truncate if needed -- a shorter string is safe to send as-is
+    // (the VT pads it with spaces to the object's existing length itself,
+    // per ISO 11783-6), but sending more characters than the object pool
+    // reserved (object_pool_ids::kTitleStringMaxChars) would overrun what
+    // some VTs treat as a fixed-size field.
+    if (title.size() > object_pool_ids::kTitleStringMaxChars) {
+        title.resize(object_pool_ids::kTitleStringMaxChars);
+    }
+    g_vt_client->send_change_string_value(object_pool_ids::kTitleString, title);
 }
 
 }  // namespace iso::vt_app

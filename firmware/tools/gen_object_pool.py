@@ -58,6 +58,10 @@ COLOUR_WHITE = 1
 ID_WORKING_SET = 1000
 ID_DATA_MASK = 1100
 ID_TITLE_STRING = 1101
+# Reserved character count for ID_TITLE_STRING -- see build_pool()'s comment
+# on this same constant for why it's wider than the static "AgIsoRelayBlock"
+# text (firmware overwrites it at connect time with a build version suffix).
+TITLE_MAX_CHARS = 44
 ID_SOFT_KEY_MASK = 1200  # page 1: SK1-SK8 toggle, SK9 buzzer, SK10 next-page
 ID_SOFT_KEY_MASK_2 = 1201  # page 2: SK1-SK8 momentary override, SK9 back
 ID_FONT = 1900
@@ -291,9 +295,19 @@ def build_pool():
     ROW_SPACING = RECT_SIZE + LABEL_HEIGHT + DI_SIZE + 24
     LEFT_MARGIN = 8
     TOP_MARGIN = 20
+    # TITLE_MAX_CHARS is a module-level constant (see its definition near
+    # ID_TITLE_STRING): firmware overwrites the title at connect time
+    # (send_change_string_value) with "AgIsoRelayBlock <build version>"
+    # once esp_app_get_description() is available, so build/deploy
+    # mismatches are visible on the VT itself instead of only in a serial
+    # log. Sized for a git-describe-style version string
+    # ("v0.3.0-2-gfe1ee66-dirty") with room to spare, while staying well
+    # under the ~448px the relay grid already occupies (LEFT_MARGIN +
+    # COLUMNS * COL_SPACING).
 
     data_mask_children = [(ID_TITLE_STRING, LEFT_MARGIN, 4)]
-    objects.append(make_output_string(ID_TITLE_STRING, 160, 12, "AgIsoRelayBlock"))
+    objects.append(make_output_string(ID_TITLE_STRING, TITLE_MAX_CHARS * 8, 12,
+                                       "AgIsoRelayBlock".ljust(TITLE_MAX_CHARS)))
 
     for ch in range(1, 9):
         col = (ch - 1) % COLUMNS
@@ -441,6 +455,8 @@ def generate_ids_header():
         "constexpr uint16_t kDataMask = {};".format(ID_DATA_MASK),
         "constexpr uint16_t kSoftKeyMask = {};".format(ID_SOFT_KEY_MASK),
         "constexpr uint16_t kSoftKeyMask2 = {};".format(ID_SOFT_KEY_MASK_2),
+        "constexpr uint16_t kTitleString = {};".format(ID_TITLE_STRING),
+        "constexpr uint16_t kTitleStringMaxChars = {};".format(TITLE_MAX_CHARS),
         "",
         "// channel: 1-8",
         "inline uint16_t relay_rect_id(int channel) {{ return {} + channel; }}".format(1110),

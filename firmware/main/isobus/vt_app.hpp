@@ -43,4 +43,16 @@ bool is_connected();
 // function code doesn't match what we filter for.
 bool is_partner_claimed();
 
+// Overwrites the Data Mask title with "AgIsoRelayBlock <build version>"
+// (the version comes from esp_app_get_description(), which ESP-IDF
+// populates from `git describe --always --dirty` at build time -- see
+// firmware/main/isobus/vt_app.cpp). Call once right after is_connected()
+// transitions to true; the object pool ships with just "AgIsoRelayBlock"
+// since the version isn't known at pool-generation time. Makes "which
+// firmware build is actually flashed and running" visible on the VT
+// screen itself, instead of only in a serial log -- useful any time a
+// bug report needs to be matched to an exact commit, e.g. an uncommitted
+// ("-dirty") build vs a clean one.
+void send_version_info();
+
 }  // namespace iso::vt_app

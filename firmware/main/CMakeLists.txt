@@ -13,7 +13,7 @@ idf_component_register(
         "automation/interlock.cpp"
     INCLUDE_DIRS "."
     REQUIRES AgIsoStack-plus-plus
-    PRIV_REQUIRES esp_hw_support esp_timer
+    PRIV_REQUIRES esp_hw_support esp_timer esp_app_format
     EMBED_FILES "isobus/object_pool.iop"
 )
 
