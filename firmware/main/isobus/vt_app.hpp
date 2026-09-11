@@ -36,4 +36,11 @@ void set_interlock_state(int channel, bool di_active);
 // isolated error/success log lines.
 bool is_connected();
 
+// True once a control function matching our VT NAME filter (function code
+// == Virtual Terminal) has claimed an address on the bus. False here despite
+// the VT app being open means the problem is upstream of us entirely --
+// either it isn't transmitting on this CAN bus at all, or its NAME's
+// function code doesn't match what we filter for.
+bool is_partner_claimed();
+
 }  // namespace iso::vt_app

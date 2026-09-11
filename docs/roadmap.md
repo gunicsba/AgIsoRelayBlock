@@ -169,21 +169,61 @@ review:
     time in future captures, to empirically confirm the retry loop is
     running (or catch it if it somehow isn't) instead of inferring it
     from sparse error/success log lines.
-  - Found a second, more likely root cause from the VT's own log directly:
-    `"Callback indicated there may be enough memory, but since there is
-    overhead associated to object storage it is impossible to be sure."`
-    Traced against our client's actual handling
-    (`isobus_virtual_terminal_client.cpp`): the Get Memory response is a
-    hard binary check on one byte -- `0` = proceed, anything else =
-    immediately fail the *entire* connection attempt
-    (`"Connection Failed Not Enough Memory"`), no partial credit for
-    "probably fine". If that VT-side uncertainty gets reported back as
-    non-zero, every single connection attempt would be rejected at this
-    exact step regardless of how many times our client retries -- which
-    would produce exactly "I have the VT running but the client doesn't
-    connect", as a first-connection rejection rather than a reconnect
-    problem. This is in `AgIsoVirtualTerminal`'s own memory-availability
-    callback, not this repo, so it isn't something to fix here.
+  - Initially suspected the Get Memory response as the blocker, from a VT
+    log line reading `"Callback indicated there may be enough memory, but
+    since there is overhead associated to object storage it is impossible
+    to be sure."` -- **ruled out** by reading `ServerMainComponent`'s
+    actual `get_is_enough_memory()` override in `AgIsoVirtualTerminal`:
+    it's `return true;` unconditionally, so that log line fires on the
+    *success* path (byte 2 of the response is always `0`), not a failure.
+    The confusing wording is just an overly cautious debug log next to an
+    always-successful check, not a rejection.
+  - Got a real answer by capturing our device's own boot log live over
+    serial while the VT app was running (`docs/roadmap.md`'s previous
+    entries here were all reasoning from the VT's log or from source
+    alone -- this was the first capture from our side during an actual
+    failed connection attempt): the handshake gets **all the way past**
+    VT Status, Working Set Master, Get Memory, Get Number of Softkeys, Get
+    Text Font Data, and Get Hardware -- all respond successfully -- then
+    stalls specifically on `"[VT]: Get Versions Response Timeout"`, fails,
+    and retries forever (`"Resetting Failed VT Connection"`). Confirmed in
+    `isobus_virtual_terminal_client.cpp` that this state (`SendGetVersions`
+    / `WaitForGetVersionsResponse`) is unconditional -- every client using
+    this AgIsoStack++ version passes through it regardless of object pool
+    version label content, so any VT that doesn't answer
+    `Function::GetVersionsMessage` can never complete a connection with
+    this client, no matter what we change on our end. The current
+    `AgIsoVirtualTerminal` source *does* implement this response
+    (`ServerMainComponent::get_versions()` -- lists cached `.iopx` files
+    for the client's NAME, returns an empty list harmlessly if none exist,
+    no exceptions on the read path), so the fix is most likely just
+    rebuilding/running that project's current source -- the user noted the
+    `.exe` they're running is "slightly different" from what's currently
+    checked out locally, which is the leading suspect. This is in
+    `AgIsoVirtualTerminal`, not this repo, so nothing to change here; added
+    `iso::vt_app::is_partner_claimed()` (see below) purely so a future
+    capture can distinguish "no VT on the bus at all" from "VT present,
+    handshake stuck" at a glance without needing a fresh serial capture
+    every time.
+  - Also answered a direct question about the VT version we declare:
+    AgIsoStack++ hardcodes `SUPPORTED_VT_VERSION = 0x06` in
+    `send_working_set_maintenance()` with no public setter, so lowering it
+    to match a version-3 VT isn't available as a client-side option
+    without patching the vendored submodule. Confirmed from the reference
+    server's own source that this doesn't matter anyway: a client
+    reporting a higher version than the VT only produces
+    `LOG_WARNING("Client N version M is higher than our reported version,
+    which is K")` -- the working set is added to `managedWorkingSetList`
+    regardless, so it's never the connection blocker.
+  - Also checked whether requesting a VT Status broadcast on demand (via a
+    PGN request) could help in case the VT only broadcasts on some
+    triggering condition: ruled out on both ends. The reference
+    `VirtualTerminalServer` broadcasts VT Status unconditionally every
+    1000 ms once its `update()`/timer loop is running (no dependency on a
+    client being present first), and it never registers a PGN-request
+    callback for it, so a request would just be ignored -- moot either
+    way, since the new evidence shows VT Status is already being received
+    fine (the handshake gets well past that step).
 
 ## Phase 4 — AUX-N
 

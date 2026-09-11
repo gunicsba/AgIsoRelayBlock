@@ -75,6 +75,7 @@ extern "C" void app_main(void) {
 
     int tick = 0;
     bool last_vt_connected = false;
+    bool last_vt_partner_claimed = false;
 
     // 20ms cadence so automation::interlock::update() debounces digital
     // inputs (and reacts to a limit switch) quickly -- 3 samples at 20ms
@@ -91,6 +92,13 @@ extern "C" void app_main(void) {
         // that retry loop visible: logged on every change, so a long gap
         // with no line here is itself the evidence that it's stuck rather
         // than actively retrying.
+        bool vt_partner_claimed = iso::vt_app::is_partner_claimed();
+        if (vt_partner_claimed != last_vt_partner_claimed) {
+            ESP_LOGI(kTag, "VT partner address claim: %s",
+                     vt_partner_claimed ? "a Virtual Terminal has claimed an address" : "no Virtual Terminal on the bus (nothing matches our NAME filter)");
+            last_vt_partner_claimed = vt_partner_claimed;
+        }
+
         bool vt_connected = iso::vt_app::is_connected();
         if (vt_connected != last_vt_connected) {
             ESP_LOGI(kTag, "VT connection: %s", vt_connected ? "CONNECTED" : "not connected (client retries automatically)");

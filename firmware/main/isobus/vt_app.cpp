@@ -27,6 +27,7 @@ constexpr const char* kTag = "vt_app";
 constexpr uint8_t kColourBlack = 0;
 
 std::shared_ptr<isobus::VirtualTerminalClient> g_vt_client;
+std::shared_ptr<isobus::PartneredControlFunction> g_vt_partner;
 
 // The relay driver is the one source of truth for relay state (per
 // docs/vt-ui-design.md's precedence rule: last action wins, no input path
@@ -222,6 +223,7 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
         static_cast<uint8_t>(isobus::NAME::Function::VirtualTerminal));
     const std::vector<isobus::NAMEFilter> vt_filters = {vt_function_filter};
     auto vt_partner = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(0, vt_filters);
+    g_vt_partner = vt_partner;
 
     const uint32_t pool_size = static_cast<uint32_t>(object_pool_iop_end - object_pool_iop_start);
     // Content-hashed, not hand-bumped: the VT caches pools by this label,
@@ -241,6 +243,18 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
 
 bool is_connected() {
     return g_vt_client && g_vt_client->get_is_connected();
+}
+
+// Distinguishes "no VT has claimed an address matching our NAME filter yet"
+// (nothing to connect to -- a bus/wiring/NAME-filter problem) from "a VT is
+// present but the connection handshake itself isn't completing" (a
+// protocol-level problem). VirtualTerminalClient's own state machine won't
+// even leave StateMachineState::Disconnected until this is true, regardless
+// of whether the VT is broadcasting VT Status (see update()'s
+// `if (nullptr != partnerControlFunction)` / `get_address_valid()` guards
+// in isobus_virtual_terminal_client.cpp).
+bool is_partner_claimed() {
+    return g_vt_partner && g_vt_partner->get_address_valid();
 }
 
 }  // namespace iso::vt_app

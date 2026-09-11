@@ -189,18 +189,31 @@ Bench-verified on real hardware (board on COM12):
   connected/not-connected transitions visible over time in future
   captures instead of inferring the retry loop from sparse log lines. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
-- 2026-09-11: found a second, more likely root cause for "the VT is
-  running but the client doesn't connect", directly from the VT's own log:
-  `"Callback indicated there may be enough memory, but... it is
-  impossible to be sure."` Our client's Get Memory handling
-  (`isobus_virtual_terminal_client.cpp`) is a hard binary check on one
-  response byte -- `0` = proceed, anything else immediately fails the
-  *whole* connection (`"Connection Failed Not Enough Memory"`). If that
-  VT-side uncertainty gets reported as non-zero, every connection attempt
-  would be rejected at this exact step regardless of retries -- a
-  first-connection rejection, not a reconnect problem. Lives in
-  `AgIsoVirtualTerminal`'s own memory-availability callback, not this
-  repo.
+- 2026-09-11: chased "the VT is running but the client doesn't connect"
+  further. First suspected the Get Memory response from a VT log line
+  reading `"Callback indicated there may be enough memory, but... it is
+  impossible to be sure."` -- **ruled out**: `AgIsoVirtualTerminal`'s
+  `get_is_enough_memory()` override is `return true;` unconditionally, so
+  that log fires on the success path, not a rejection. Got a real answer
+  from a live serial capture of our own device during a failed connection
+  attempt: the handshake sails through VT Status, Working Set Master, Get
+  Memory, Get Number of Softkeys, Get Text Font Data, and Get Hardware,
+  then stalls on `"Get Versions Response Timeout"` every single time. That
+  state is unconditional in this AgIsoStack++ version (every client passes
+  through it), so any VT that doesn't answer `GetVersionsMessage` can
+  never complete a connection with this client. The VT's current source
+  does implement that response correctly -- the leading suspect is the
+  `.exe` the user's actually running predating it (matches "the
+  AgIsoVirtualTerminal I'm running is slightly different than the one we
+  have locally"). Added `iso::vt_app::is_partner_claimed()` so a future
+  capture can tell "no VT on the bus" apart from "VT present, handshake
+  stuck" at a glance. Also confirmed two side questions from source: our
+  declared VT version (hardcoded `0x06`, no public setter) only produces a
+  non-fatal log warning on a version mismatch, never a rejection; and
+  requesting a VT Status broadcast on demand wouldn't help either, since
+  the reference server broadcasts it unconditionally every 1000ms with no
+  PGN-request handling at all. Full detail in
+  [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
 - 2026-09-11: fixed two more real bugs found once the Phase 6 DI
   indicators were actually visible on a real VT --
   1. Two channels showed disabled/flickering with nothing wired to their
