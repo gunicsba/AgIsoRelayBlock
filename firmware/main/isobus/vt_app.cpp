@@ -47,9 +47,62 @@ bool apply_relay_state(int channel, bool new_state) {
     return true;
 }
 
+// Momentary override, shared by both places it appears (the AUX-N
+// momentary function and the SKM page-2 momentary keys, using the same
+// per-channel state so pressing either one for the same channel behaves
+// consistently): pressing it inverts the relay's current state; releasing
+// restores whatever the state was immediately before the press. So if a
+// channel is latched ON and this is pressed, it goes OFF while held and
+// back ON on release -- and symmetrically for a channel that's OFF, it
+// goes ON while held and back OFF on release. This is an override, not a
+// direct setter, specifically so it can coexist with the toggle variant /
+// SKM on the same channel without fighting over it (an earlier version
+// mirrored the input value straight to the relay, but AUX-N input devices
+// report status periodically even while idle, so its own idle "released"
+// reports kept silently overriding whatever the toggle variant had set --
+// see docs/vt-ui-design.md#aux-n-functions-17-total).
+struct MomentaryOverrideState {
+    bool last_input_state = false;
+    bool saved_state_before_press = false;
+};
+MomentaryOverrideState g_momentary_state[9];  // index 1-8, [0] unused
+
+void handle_momentary_override(int channel, bool pressed) {
+    MomentaryOverrideState& st = g_momentary_state[channel];
+    if (pressed && !st.last_input_state) {
+        // Rising edge: remember the current state, invert it.
+        st.saved_state_before_press = io::relay_driver::get_relay(channel);
+        apply_relay_state(channel, !st.saved_state_before_press);
+    } else if (!pressed && st.last_input_state) {
+        // Falling edge: restore.
+        if (io::relay_driver::get_relay(channel) != st.saved_state_before_press) {
+            apply_relay_state(channel, st.saved_state_before_press);
+        }
+    }
+    st.last_input_state = pressed;
+}
+
 void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& event) {
-    if (event.keyEvent != isobus::VirtualTerminalClient::KeyActivationCode::ButtonUnlatchedOrReleased) {
-        return;  // act on release, like a normal button click
+    // Page 2's momentary keys need press AND release (to invert-then-
+    // restore), unlike everything below which only acts on release.
+    for (int ch = 1; ch <= 8; ++ch) {
+        if (event.objectID == object_pool_ids::softkey2_id(ch)) {
+            bool pressed = (event.keyEvent == isobus::VirtualTerminalClient::KeyActivationCode::ButtonPressedOrLatched ||
+                            event.keyEvent == isobus::VirtualTerminalClient::KeyActivationCode::ButtonStillHeld);
+            handle_momentary_override(ch, pressed);
+            return;
+        }
+    }
+
+    if (event.objectID != object_pool_ids::kSoftkeyBack &&
+        event.keyEvent != isobus::VirtualTerminalClient::KeyActivationCode::ButtonUnlatchedOrReleased) {
+        return;  // everything below (including the back key) acts on release
+    }
+
+    if (event.objectID == object_pool_ids::kSoftkeyBack) {
+        g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
+                                              object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask);
+        return;
     }
 
     for (int ch = 1; ch <= 8; ++ch) {
@@ -62,6 +115,12 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
     if (event.objectID == object_pool_ids::softkey_id(9)) {
         ESP_LOGI(kTag, "SK9: buzzer pulse");
         io::buzzer_driver::pulse();
+        return;
+    }
+
+    if (event.objectID == object_pool_ids::softkey_id(10)) {
+        g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
+                                              object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask2);
     }
 }
 
@@ -72,18 +131,7 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
 // gen_object_pool.py's build_pool() for why). The "latching" *result* for
 // the toggle variant is therefore produced here, in firmware, not by the
 // declared function type: toggle on each rising edge, ignore the release.
-//
-// The other variant is NOT a direct mirror (an earlier version was, but
-// that meant its own idle/released status reports -- sent periodically
-// regardless of whether it's ever actually been pressed -- would
-// unconditionally stomp whatever the toggle variant or SKM had set,
-// since "released" was mirrored as an unconditional relay-off command).
-// It's an override instead: pressing it saves the relay's current state
-// and forces the relay off; releasing restores whatever that saved state
-// was. Two controls for the same relay no longer fight over it -- the
-// momentary one temporarily suspends the output rather than competing to
-// set it -- at the cost of no longer being usable on its own to turn on
-// something that's normally off (see docs/vt-ui-design.md#aux-n-functions-17-total).
+// The other variant uses handle_momentary_override() above.
 void handle_aux_function_event(const isobus::VirtualTerminalClient::AuxiliaryFunctionEvent& event) {
     const bool state = (event.value1 != 0);
     const uint16_t function_id = event.function.functionObjectID;
@@ -100,21 +148,7 @@ void handle_aux_function_event(const isobus::VirtualTerminalClient::AuxiliaryFun
             return;
         }
         if (function_id == object_pool_ids::aux_momentary_function_id(ch)) {
-            static bool last_momentary_input_state[9] = {};  // index 1-8, [0] unused
-            static bool saved_state_before_press[9] = {};
-            if (state && !last_momentary_input_state[ch]) {
-                // Rising edge: remember the current state, force off.
-                saved_state_before_press[ch] = io::relay_driver::get_relay(ch);
-                if (saved_state_before_press[ch]) {
-                    apply_relay_state(ch, false);
-                }
-            } else if (!state && last_momentary_input_state[ch]) {
-                // Falling edge: restore.
-                if (io::relay_driver::get_relay(ch) != saved_state_before_press[ch]) {
-                    apply_relay_state(ch, saved_state_before_press[ch]);
-                }
-            }
-            last_momentary_input_state[ch] = state;
+            handle_momentary_override(ch, state);
             return;
         }
     }

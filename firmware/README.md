@@ -97,7 +97,8 @@ Bench-verified on real hardware (board on COM12):
   "released" reports kept silently overriding whatever the toggle variant
   had set. Redefined the momentary variant as an override instead of a
   competing direct setter: press saves the relay's current state and
-  forces it off, release restores the saved state. Also: SK1-SK8 now show
+  **inverts** it, release restores the saved state -- so a latched-ON
+  channel goes OFF while held and back ON on release. Also: SK1-SK8 now show
   `"R1"`-`"R8"` (underlined, matching the AUX-N toggle variant's
   convention) instead of a bare digit; buzzer labels (SK9 and the AUX-N
   function) both now say `"BZ"`; and the buzzer itself turned out to be a
@@ -105,6 +106,28 @@ Bench-verified on real hardware (board on COM12):
   [buzzer_driver.cpp](main/io/buzzer_driver.cpp) to drive it via LEDC PWM
   (~2.7kHz) instead of a plain GPIO pulse. See
   [../docs/vt-ui-design.md](../docs/vt-ui-design.md#aux-n-functions-17-total).
+- 2026-09-11: added a second Soft Key Mask page (SK1-SK8 momentary-override
+  keys + a back key), reached from page 1 via a new SK10 ("`>>`") using the
+  VT's "Change Soft Key Mask" command -- the Data Mask itself never
+  changes, just which SKM is shown alongside it. Page 2's momentary keys
+  share the exact same per-channel override state as the AUX-N momentary
+  function, so pressing either one for a channel doesn't leave the other
+  out of sync. See
+  [../docs/vt-ui-design.md](../docs/vt-ui-design.md#soft-key-masks-two-pages-reached-via-a-nextback-key).
+- 2026-09-11: made this device's ISOBUS address stable across reboots (was
+  picking whatever was free each time; now requests the same preferred
+  address derived from the chip's MAC -- confirmed identical, 200, across
+  two consecutive reboots on the bench) as a plausible partial mitigation
+  for the "must restart the VT to reappear" issue. Investigating further
+  turned up a likely real gap in AgIsoStack++'s own vendored
+  `VirtualTerminalServer` reference implementation: reading
+  `isobus_virtual_terminal_server.cpp`, `managedWorkingSetList` is only
+  ever matched by comparing the actual `ControlFunction` C++ object
+  reference, with no timeout-based cleanup anywhere in that file -- so if
+  the server's own network manager ever loses and re-detects a client
+  (creating a new CF object), the cached entry goes stale with no
+  recovery path short of restarting the whole VT app. See
+  [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

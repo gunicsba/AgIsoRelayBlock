@@ -99,10 +99,20 @@ std::shared_ptr<isobus::InternalControlFunction> init() {
                         0x1FFFFF;
     device_name.set_identity_number(identity);
 
-    auto internal_ecu =
-        isobus::CANNetworkManager::CANNetwork.create_internal_control_function(device_name, 0);
-    ESP_LOGI(kTag, "claiming ISOBUS address (identity=0x%06lX)...",
-             static_cast<unsigned long>(identity));
+    // Preferred (not exclusive) address, derived the same deterministic
+    // way as identity so it's stable across reboots rather than picking
+    // whatever's free each time (the default when no preferred address is
+    // given). Address instability was a suspected contributor to the VT
+    // needing a manual restart to notice this device again -- its own
+    // per-client bookkeeping may not expect the same NAME to reappear at a
+    // different address. Still falls back to normal dynamic arbitration
+    // (arbitrary_address_capable=true) if 128+ is somehow already taken.
+    uint8_t preferred_address = static_cast<uint8_t>(128 + (identity % 100));
+
+    auto internal_ecu = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(
+        device_name, 0, preferred_address);
+    ESP_LOGI(kTag, "claiming ISOBUS address (identity=0x%06lX, preferred=%u)...",
+             static_cast<unsigned long>(identity), preferred_address);
     return internal_ecu;
 }
 

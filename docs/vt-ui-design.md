@@ -1,10 +1,11 @@
 # Virtual Terminal UI Design (Main Screen)
 
 Concrete object pool design for the primary VT screen: 8 relay-state
-indicators (4-per-row × 2 rows), 8 dedicated soft keys to toggle them, 1
-dedicated soft key to trigger the buzzer, and 17 matching AUX-N functions
-(a latching + a momentary variant per relay channel R1–R8, plus one
-momentary buzzer function). This refines the general VT/AUX-N notes in
+indicators (4-per-row × 2 rows), two Soft Key Mask pages (8 toggle keys +
+buzzer + next-page on page 1; 8 momentary-override keys + back on page 2),
+and 17 matching AUX-N functions (a toggle + a momentary-override variant
+per relay channel R1–R8, plus one momentary buzzer function). This refines
+the general VT/AUX-N notes in
 [isobus-protocol.md](isobus-protocol.md) into an actual layout. Naming/icon
 *picking* UI (Phase 5) and automation rule UI (Phase 6) build on top of
 this later and are not covered here.
@@ -23,7 +24,11 @@ labels are used in their place for now.
 - **Data Mask "Main"** — the only mask for MVP:
   - Title/identification text (device name).
   - The relay indicator grid (below).
-  - Soft Key Mask assigned: **"Main SKM"** (below).
+  - Soft Key Mask assigned: **"Main SKM"** (below) — a second SKM page
+    exists too, reached at runtime via a next/back key pair, not through
+    the Data Mask's own static assignment (see
+    [Soft Key Masks](#soft-key-masks-two-pages-reached-via-a-nextback-key)
+    below).
 - Later phases add more masks (naming/icon picker, automation rules) — out
   of scope here, see [roadmap.md](roadmap.md).
 
@@ -49,36 +54,49 @@ reflowed into a grid. Each widget:
   the real toggle path for non-touch VTs is the SKM/AUX-N below, so this
   is an enhancement, not a dependency.
 
-## Soft Key Mask "Main SKM" (9 keys)
+## Soft Key Masks: two pages, reached via a next/back key
+
+Two Soft Key Mask objects, switched at runtime with the VT's "Change Soft
+Key Mask" command (`send_change_softkey_mask`) rather than existing as two
+separate Data Masks — the Data Mask itself never changes, just which SKM
+is currently shown alongside it.
+
+**Page 1 "Main SKM" (10 keys) — the default on connect:**
 
 | Key | Action | Icon |
 |---|---|---|
 | SK1–SK8 | Toggle relay channel 1–8 | Text label **"R{n}"**, underlined — same "R{n}" + underline convention as the AUX-N toggle variant, since an SKM press already toggles (same icon used by that channel's AUX-N function, so the physical key and the on-screen row look consistent) |
 | SK9 | Trigger buzzer (momentary pulse) | Text label **"BZ"** — Distinct buzzer/speaker pictogram once icons exist (Phase 5) |
+| SK10 | Switch to page 2 | Text label **">>"** |
+
+**Page 2 "Momentary SKM" (9 keys):**
+
+| Key | Action | Icon |
+|---|---|---|
+| SK1–SK8 | Momentary-override relay channel 1–8 (see [AUX-N functions](#aux-n-functions-17-total) below for exactly what this does) | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator, matching the AUX-N momentary variant's convention |
+| SK9 | Switch back to page 1 | Text label **"<<"** |
 
 Key labels use 32×32 text (bumped up from an initial 8×8 pass that was
 "way too small" on the bench — roughly 4× the linear size), and SK1–SK8
-now show **"R1"–"R8"** rather than a bare digit, matching the Data Mask
-and AUX-N assignment list labeling for consistency.
+show **"R1"–"R8"** rather than a bare digit, matching the Data Mask and
+AUX-N assignment list labeling for consistency.
 
-**Compatibility caveat:** not every VT renders 9 soft keys at once — many
+**Compatibility caveat:** not every VT renders 10 soft keys at once — many
 show 6 physical keys per mask, some 8, larger ones more. This needs
-resolving on the bench (see [Open questions](#open-questions)); options if
-9 doesn't fit on one physical VT: a second Soft Key Mask reached via a
-"more" key, or (fallback) drop the buzzer to a Data Mask button only on
-VTs that can't fit a 9th key.
+resolving on the bench (see [Open questions](#open-questions)) for VTs
+other than the one this has actually been tested against.
 
 ## AUX-N functions (17 total)
 
 Each relay channel publishes **two** Auxiliary Function Type 2 objects, so
 the operator picks whichever behavior fits their equipment in the
 tractor's own native AUX-N assignment menu: a momentary override for
-temporarily pausing something that's on, or toggle-and-stay for
-lights/pumps/fans. This is a deliberate choice, not an oversight: the
-hardware is generic relay contacts that could drive either kind of load,
-so offering both lets the assignment-time choice live where it belongs —
-with the person wiring up the equipment — at the cost of a longer list in
-the tractor's assignment menu.
+temporarily inverting something, or toggle-and-stay for lights/pumps/fans.
+This is a deliberate choice, not an oversight: the hardware is generic
+relay contacts that could drive either kind of load, so offering both lets
+the assignment-time choice live where it belongs — with the person wiring
+up the equipment — at the cost of a longer list in the tractor's
+assignment menu.
 
 **The momentary variant is an override, not a direct setter.** An earlier
 version mirrored the input value straight to the relay (hold-to-run,
@@ -89,12 +107,13 @@ momentary variant's own idle "released" reports would repeatedly and
 silently stomp whatever the toggle variant had set. Bench-confirmed: "the
 momentary always turns it off." Fixed by making momentary an override
 instead of a competing setter: pressing it saves the relay's current
-state and forces the relay off; releasing restores whatever that saved
-state was. Two controls for the same relay no longer fight over it. The
-tradeoff: the momentary variant can no longer be used on its own to turn
-on something that's normally off (pressing it while already off just
-does nothing, then restores to off on release) — it only ever pauses,
-never activates.
+state and **inverts** it; releasing restores whatever that saved state
+was. So a channel that's latched ON goes OFF while the momentary control
+is held and back ON on release — and symmetrically, a channel that's OFF
+goes ON while held and back OFF on release. Two controls for the same
+relay no longer fight over it, since the momentary one only ever acts
+relative to whatever the state already was, never setting an absolute
+value of its own.
 
 **Both variants are declared `BooleanNonLatchingIncreaseValue` (2) at the
 protocol level — neither uses `BooleanLatchingOnOff` (0).** Most tractors
@@ -112,7 +131,7 @@ value straight through.
 | # | Function | Type 2 `FunctionType` | Behavior | Label/Icon |
 |---|---|---|---|---|
 | 1–8 | Relay channel 1–8, toggle | `BooleanNonLatchingIncreaseValue` (2) | Firmware toggles the relay on each press (rising edge), ignores release — a momentary button acts like a latch | Text label **"R{n}"**, **underlined** — same digits as the momentary variant below (an earlier `"R{n}#"` attempt rendered as an unlabeled, clipped "R" in the AUX-N assignment list: its label object had been left at the pre-readability-pass size while everything else got bumped) |
-| 9–16 | Relay channel 1–8, momentary override | `BooleanNonLatchingIncreaseValue` (2) | Firmware saves the relay's current state and forces it off on press; restores the saved state on release. Only has a visible effect on a channel that's already on — see the note above | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator |
+| 9–16 | Relay channel 1–8, momentary override | `BooleanNonLatchingIncreaseValue` (2) | Firmware saves the relay's current state and inverts it on press; restores the saved state on release — see the note above | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator, and shared with the same-numbered key on SKM page 2 |
 | 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Edge-triggered pulse on rising edge; matches SK9's pulse behavior | Own dedicated **"BZ"** label |
 
 See `handle_aux_function_event` in

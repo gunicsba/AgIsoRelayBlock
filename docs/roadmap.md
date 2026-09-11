@@ -130,6 +130,26 @@ review:
   happened identically whether or not a pool upload was actually
   triggered), not something introduced by this firmware, but still open
   since it affects the real user-visible experience.
+  - Made our device's own ISOBUS address stable across reboots (was
+    picking whatever was free each time; now requests the same preferred
+    address derived from the chip's MAC, confirmed identical across
+    repeated reboots on the bench) — see
+    [ecu_identity.cpp](../firmware/main/isobus/ecu_identity.cpp). A
+    plausible contributing factor, not a confirmed fix.
+  - The VT's own log points at a real gap in AgIsoStack++'s vendored
+    `VirtualTerminalServer` reference implementation (which
+    AgIsoVirtualTerminal is built on): `managedWorkingSetList` is only
+    ever matched by comparing the actual `ControlFunction` C++ object
+    reference, and there's no timeout-based cleanup anywhere in that file
+    -- confirmed by reading the source, not by log inspection. A client
+    logged as `"Received a non-status message from a client at address
+    N, but they are not connected to this VT"` some time after
+    successfully connecting means the *object* the server has cached for
+    that client went stale (e.g. if its own network manager briefly loses
+    and re-detects the client, creating a new CF object that no longer
+    matches the cached one) with no recovery path except restarting the
+    whole VT app. Worth reporting upstream to AgIsoStack++ if it
+    reproduces with the address now stable.
 
 ## Phase 4 — AUX-N
 
@@ -174,10 +194,20 @@ review:
       silently overriding whatever the toggle variant had set. Fixed by
       redefining the momentary variant as an override rather than a
       competing direct setter: press saves the relay's current state and
-      forces it off, release restores the saved state — so it can no
-      longer fight with another control over the same relay, at the cost
-      of no longer being usable standalone to turn on something that's
-      normally off (it only pauses, never activates).
+      **inverts** it, release restores the saved state — so a latched-ON
+      channel goes OFF while held and back ON on release (and
+      symmetrically for a channel that starts OFF). It can no longer fight
+      with another control over the same relay, since it only ever acts
+      relative to the existing state rather than setting an absolute one.
+- [x] Added a second Soft Key Mask page, reached via a next/back key pair
+      using the VT's "Change Soft Key Mask" command (the Data Mask itself
+      never changes, just which SKM is shown alongside it): page 1 keeps
+      SK1–SK8 (toggle) + SK9 (buzzer) as before, plus a new SK10 ("`>>`")
+      to switch pages; page 2 has SK1–SK8 as momentary-override keys
+      (identical behavior to the AUX-N momentary variant, sharing the same
+      per-channel state so pressing either one for a channel doesn't leave
+      the other out of sync) plus a back key ("`<<`"). See
+      [vt-ui-design.md](vt-ui-design.md#soft-key-masks-two-pages-reached-via-a-nextback-key).
 - [x] Verify manual VT control and AUX-N control don't fight each other
       (e.g. last-write-wins, or explicit precedence rule — decide and
       document) — both paths funnel through the same `apply_relay_state`

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Generates the ISO 11783-6 VT object pool binary (.iop) for the main
 screen, per docs/vt-ui-design.md: a Data Mask with an 8-in-a-row relay
-state indicator strip, a Main Soft Key Mask with SK1-SK8 (relay toggles) +
-SK9 (buzzer pulse), and 17 Auxiliary Function Type 2 objects (a latching +
-a momentary variant per relay channel, plus one momentary buzzer function)
-for AUX-N joystick/armrest assignment.
+state indicator strip, two Soft Key Mask pages reached via a next/back key
+pair (page 1: SK1-SK8 relay toggles + SK9 buzzer + SK10 next-page; page 2:
+SK1-SK8 momentary override + a back key), and 17 Auxiliary Function Type 2
+objects (a toggle + a momentary-override variant per relay channel, plus
+one momentary buzzer function) for AUX-N joystick/armrest assignment.
 
 Auxiliary Function Type 2, not Type 1: AgIsoStack++'s own parser
 (isobus_virtual_terminal_working_set_base.cpp) logs that Type 1 objects
@@ -57,7 +58,8 @@ COLOUR_WHITE = 1
 ID_WORKING_SET = 1000
 ID_DATA_MASK = 1100
 ID_TITLE_STRING = 1101
-ID_SOFT_KEY_MASK = 1200
+ID_SOFT_KEY_MASK = 1200  # page 1: SK1-SK8 toggle, SK9 buzzer, SK10 next-page
+ID_SOFT_KEY_MASK_2 = 1201  # page 2: SK1-SK8 momentary override, SK9 back
 ID_FONT = 1900
 ID_FONT_LARGE = 1901  # 32x32 -- Data Mask indicators + soft key labels
 ID_FONT_LARGE_UNDERLINE = 1902  # same, underlined -- marks the AUX-N toggle variant
@@ -94,12 +96,20 @@ ID_AUX_BUZZER_FUNCTION = 1560
 ID_AUX_BUZZER_LABEL = 1561
 
 
-def softkey_id(key_number):  # key_number: 1-9 (1-8 relays, 9 buzzer)
+def softkey_id(key_number):  # key_number: 1-9 (1-8 relays, 9 buzzer), 10 = next-page
     return 1210 + key_number
 
 
 def softkey_label_id(key_number):
     return 1230 + key_number
+
+
+def softkey2_id(channel):  # channel: 1-8, momentary override page
+    return 1250 + channel
+
+
+ID_SOFTKEY_BACK = 1260
+ID_SOFTKEY_BACK_LABEL = 1261
 
 
 def u16(value):
@@ -192,7 +202,7 @@ def make_output_rectangle(object_id, width, height, fill_attr_id):
     return object_header(object_id, T_OUTPUT_RECTANGLE) + body
 
 
-def make_soft_key_mask(key_ids):
+def make_soft_key_mask(key_ids, mask_id=ID_SOFT_KEY_MASK):
     # Macro count is a header field (0 below); no trailing macro byte.
     background_colour = COLOUR_WHITE
     body = (
@@ -200,7 +210,7 @@ def make_soft_key_mask(key_ids):
         + bytes([len(key_ids), 0])  # childrenToFollow, macrosToFollow
         + b"".join(u16(k) for k in key_ids)
     )
-    return object_header(ID_SOFT_KEY_MASK, T_SOFT_KEY_MASK) + body
+    return object_header(mask_id, T_SOFT_KEY_MASK) + body
 
 
 def make_key(object_id, key_code, children):
@@ -291,23 +301,27 @@ def build_pool():
         data_mask_children.append((rect_id, x, rect_y))
         data_mask_children.append((label_id, x, label_y))
 
-    # --- Main Soft Key Mask: SK1-SK8 (relay toggles) + SK9 (buzzer) ---
-    # Emitted *before* the Data Mask that references it, and Key objects
-    # before the mask that references them: every object here is defined
-    # before anything that points to its ID. AgIsoStack++'s own parser
-    # doesn't care about forward references (it parses the whole pool into
-    # a map before resolving anything), but there's no reason to rely on
-    # that leniency when a strictly bottom-up order costs nothing.
+    # --- Soft Key Mask page 1 (default/initial): SK1-SK8 (relay toggles) +
+    # SK9 (buzzer) + SK10 (next page). Emitted *before* the Data Mask that
+    # references it, and Key objects before the mask that references them:
+    # every object here is defined before anything that points to its ID.
+    # AgIsoStack++'s own parser doesn't care about forward references (it
+    # parses the whole pool into a map before resolving anything), but
+    # there's no reason to rely on that leniency when a strictly bottom-up
+    # order costs nothing.
     key_ids = []
-    for k in range(1, 10):
+    for k in range(1, 11):
         key_id = softkey_id(k)
         label_id = softkey_label_id(k)
         # SK1-SK8 toggle the relay (matches the AUX-N "toggle" variant's
         # behavior), so they get the same "R{n}" text + underline
         # convention: underlined = toggles/latches, plain = hold-to-run.
-        # SK9 (buzzer) has no such distinction to make, so no underline.
+        # SK9 (buzzer) and SK10 (page nav) have no such distinction to
+        # make, so no underline.
         if k == 9:
             label_text, font_id = "BZ", ID_FONT_LARGE
+        elif k == 10:
+            label_text, font_id = ">>", ID_FONT_LARGE
         else:
             label_text, font_id = "R{}".format(k), ID_FONT_LARGE_UNDERLINE
 
@@ -316,6 +330,23 @@ def build_pool():
         key_ids.append(key_id)
 
     objects.append(make_soft_key_mask(key_ids))
+
+    # --- Soft Key Mask page 2: SK1-SK8 momentary-override + a back key.
+    # Reuses each channel's own Data Mask "R{n}" label (plain, no
+    # underline -- same convention as the AUX-N momentary variant) rather
+    # than creating duplicate label objects.
+    page2_key_ids = []
+    for ch in range(1, 9):
+        key_id = softkey2_id(ch)
+        objects.append(make_key(key_id, key_code=ch, children=[(relay_label_id(ch), 2, 2)]))
+        page2_key_ids.append(key_id)
+
+    objects.append(make_output_string(ID_SOFTKEY_BACK_LABEL, RECT_SIZE, LABEL_HEIGHT, "<<", font_id=ID_FONT_LARGE))
+    objects.append(make_key(ID_SOFTKEY_BACK, key_code=9, children=[(ID_SOFTKEY_BACK_LABEL, 2, 2)]))
+    page2_key_ids.append(ID_SOFTKEY_BACK)
+
+    objects.append(make_soft_key_mask(page2_key_ids, mask_id=ID_SOFT_KEY_MASK_2))
+
     objects.append(make_data_mask(data_mask_children))
 
     # --- Auxiliary Function Type 2 objects: AUX-N joystick/armrest
@@ -383,13 +414,18 @@ def generate_ids_header():
         "constexpr uint16_t kWorkingSet = {};".format(ID_WORKING_SET),
         "constexpr uint16_t kDataMask = {};".format(ID_DATA_MASK),
         "constexpr uint16_t kSoftKeyMask = {};".format(ID_SOFT_KEY_MASK),
+        "constexpr uint16_t kSoftKeyMask2 = {};".format(ID_SOFT_KEY_MASK_2),
         "",
         "// channel: 1-8",
         "inline uint16_t relay_rect_id(int channel) {{ return {} + channel; }}".format(1110),
         "inline uint16_t relay_fill_attr_id(int channel) {{ return {} + channel; }}".format(1920),
         "",
-        "// key_number: 1-8 = relay channels, 9 = buzzer",
+        "// key_number: 1-8 = relay channels (toggle), 9 = buzzer, 10 = next page",
         "inline uint16_t softkey_id(int key_number) {{ return {} + key_number; }}".format(1210),
+        "",
+        "// Soft Key Mask page 2: channel 1-8 = momentary override, plus a back key.",
+        "inline uint16_t softkey2_id(int channel) {{ return {} + channel; }}".format(1250),
+        "constexpr uint16_t kSoftkeyBack = {};".format(ID_SOFTKEY_BACK),
         "",
         "// AUX-N Auxiliary Function Type 2 objects. channel: 1-8.",
         "inline uint16_t aux_latch_function_id(int channel) {{ return {} + channel; }}".format(1500),

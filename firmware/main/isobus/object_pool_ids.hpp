@@ -10,13 +10,18 @@ namespace iso::object_pool_ids {
 constexpr uint16_t kWorkingSet = 1000;
 constexpr uint16_t kDataMask = 1100;
 constexpr uint16_t kSoftKeyMask = 1200;
+constexpr uint16_t kSoftKeyMask2 = 1201;
 
 // channel: 1-8
 inline uint16_t relay_rect_id(int channel) { return 1110 + channel; }
 inline uint16_t relay_fill_attr_id(int channel) { return 1920 + channel; }
 
-// key_number: 1-8 = relay channels, 9 = buzzer
+// key_number: 1-8 = relay channels (toggle), 9 = buzzer, 10 = next page
 inline uint16_t softkey_id(int key_number) { return 1210 + key_number; }
+
+// Soft Key Mask page 2: channel 1-8 = momentary override, plus a back key.
+inline uint16_t softkey2_id(int channel) { return 1250 + channel; }
+constexpr uint16_t kSoftkeyBack = 1260;
 
 // AUX-N Auxiliary Function Type 2 objects. channel: 1-8.
 inline uint16_t aux_latch_function_id(int channel) { return 1500 + channel; }
