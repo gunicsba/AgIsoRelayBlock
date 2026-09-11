@@ -153,6 +153,15 @@ review:
       on the bench; end-to-end assignment (a real joystick button actually
       mapped and driving a relay) still needs a retest once the bench's
       joystick/VT connectivity is stable (see the Phase 3 known issues).
+      Assignment testing turned up a real labeling bug: the toggle
+      variant's designator label had been left at its pre-readability-pass
+      size (16×10, 8×8 font) while every other label got bumped, so it
+      rendered as a clipped, unlabeled "R" in the AUX-N assignment list —
+      all 8 toggle entries looked identical, an easy way to grab the wrong
+      one. Fixed: same "R{n}" text as the hold-to-run variant, sized to
+      match, distinguished by an underlined font instead of a suffix
+      character. The buzzer's AUX-N designator also got its own dedicated
+      "B" label rather than reusing SK9's "Bz", so it can't clip either.
 - [x] Verify manual VT control and AUX-N control don't fight each other
       (e.g. last-write-wins, or explicit precedence rule — decide and
       document) — both paths funnel through the same `apply_relay_state`

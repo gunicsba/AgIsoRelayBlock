@@ -93,9 +93,9 @@ value straight through.
 
 | # | Function | Type 2 `FunctionType` | Behavior | Label/Icon |
 |---|---|---|---|---|
-| 1–8 | Relay channel 1–8, toggle | `BooleanNonLatchingIncreaseValue` (2) | Firmware toggles the relay on each press (rising edge), ignores release — a momentary button acts like a latch | Text label **"R{n}#"** for now (own dedicated label object, not shared with anything else) — the trailing `#` marks it as the toggle variant. Shared relay pictogram + `#` mark once icons exist (Phase 5) |
-| 9–16 | Relay channel 1–8, hold-to-run | `BooleanNonLatchingIncreaseValue` (2) | Firmware mirrors the input value straight to the relay — on only while the mapped button is held | Text label **"R{n}"**, plain — reuses the same label object as that channel's Data Mask indicator |
-| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Edge-triggered pulse on rising edge; matches SK9's pulse behavior | Reuses SK9's "Bz" label |
+| 1–8 | Relay channel 1–8, toggle | `BooleanNonLatchingIncreaseValue` (2) | Firmware toggles the relay on each press (rising edge), ignores release — a momentary button acts like a latch | Text label **"R{n}"**, **underlined** — same digits as the hold-to-run variant below (an earlier `"R{n}#"` attempt rendered as an unlabeled, clipped "R" in the AUX-N assignment list: its label object had been left at the pre-readability-pass size while everything else got bumped) |
+| 9–16 | Relay channel 1–8, hold-to-run | `BooleanNonLatchingIncreaseValue` (2) | Firmware mirrors the input value straight to the relay — on only while the mapped button is held | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator |
+| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Edge-triggered pulse on rising edge; matches SK9's pulse behavior | Own dedicated **"B"** label (short enough it can't clip regardless of the assignment list's designator box size) |
 
 See `handle_aux_function_event` in
 [vt_app.cpp](../firmware/main/isobus/vt_app.cpp) for the actual edge

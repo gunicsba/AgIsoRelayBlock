@@ -60,7 +60,10 @@ ID_TITLE_STRING = 1101
 ID_SOFT_KEY_MASK = 1200
 ID_FONT = 1900
 ID_FONT_LARGE = 1901  # 32x32 -- Data Mask indicators + soft key labels
+ID_FONT_LARGE_UNDERLINE = 1902  # same, underlined -- marks the AUX-N toggle variant
 ID_LINE_ATTR = 1910
+
+FONT_STYLE_UNDERLINED = 0x04  # FontAttributes::FontStyleBits::Underlined bit
 
 
 def relay_rect_id(channel):  # channel: 1-8
@@ -88,6 +91,7 @@ def aux_latch_label_id(channel):
 
 
 ID_AUX_BUZZER_FUNCTION = 1560
+ID_AUX_BUZZER_LABEL = 1561
 
 
 def softkey_id(key_number):  # key_number: 1-9 (1-8 relays, 9 buzzer)
@@ -248,6 +252,7 @@ def build_pool():
     # --- Shared attribute objects ---
     objects.append(make_font_attributes(ID_FONT, size=1))  # 8x8 -- title only
     objects.append(make_font_attributes(ID_FONT_LARGE, size=7))  # 32x32
+    objects.append(make_font_attributes(ID_FONT_LARGE_UNDERLINE, size=7, style=FONT_STYLE_UNDERLINED))
     objects.append(make_line_attributes(ID_LINE_ATTR, colour=COLOUR_BLACK, width=1))
 
     # --- Data Mask contents: title + relay indicators, 4-per-row x 2 rows
@@ -321,13 +326,17 @@ def build_pool():
     # handle_aux_function_event() in vt_app.cpp). Not children of anything
     # -- see make_auxiliary_function_type2()'s docstring.
     for ch in range(1, 9):
-        # "Toggle" variant gets its own "R{ch}#" label -- the "#" marks it
-        # as the one that latches (toggles and stays), distinct from the
-        # plain "R{ch}" hold-to-run variant below, which reuses the Data
-        # Mask's own label. Both are declared non-latching at the protocol
+        # "Toggle" variant: same "R{ch}" text as the hold-to-run variant
+        # (an earlier "R{ch}#" pass rendered as a clipped, unlabeled "R" in
+        # the AUX-N assignment list -- its label object had never been
+        # sized up in the same pass that fixed every *other* label's size,
+        # so it was still 16x10 in the small 8x8 font), distinguished
+        # instead by an underlined font so it doesn't depend on box size to
+        # read correctly. Both are declared non-latching at the protocol
         # level; only our own handling of the toggle variant differs.
         latch_label_id = aux_latch_label_id(ch)
-        objects.append(make_output_string(latch_label_id, 16, 10, "R{}#".format(ch)))
+        objects.append(make_output_string(latch_label_id, RECT_SIZE, LABEL_HEIGHT,
+                                          "R{}".format(ch), font_id=ID_FONT_LARGE_UNDERLINE))
         objects.append(make_auxiliary_function_type2(
             aux_latch_function_id(ch), AUX_FUNC_NON_LATCHING_MOMENTARY,
             children=[(latch_label_id, 2, 2)]))
@@ -336,10 +345,13 @@ def build_pool():
             aux_momentary_function_id(ch), AUX_FUNC_NON_LATCHING_MOMENTARY,
             children=[(relay_label_id(ch), 2, 2)]))
 
-    # Buzzer: momentary only, reuses the SK9 "Bz" label.
+    # Buzzer: its own dedicated "B" label (not SK9's "Bz" -- kept short so
+    # it can't clip in the AUX-N assignment list's designator area either).
+    objects.append(make_output_string(ID_AUX_BUZZER_LABEL, RECT_SIZE, LABEL_HEIGHT,
+                                      "B", font_id=ID_FONT_LARGE))
     objects.append(make_auxiliary_function_type2(
         ID_AUX_BUZZER_FUNCTION, AUX_FUNC_NON_LATCHING_MOMENTARY,
-        children=[(softkey_label_id(9), 2, 2)]))
+        children=[(ID_AUX_BUZZER_LABEL, 2, 2)]))
 
     # --- Working Set (root) ---
     # Reuses the title string as its designator (valid: an object may be

@@ -78,6 +78,17 @@ Bench-verified on real hardware (board on COM12):
   momentary variant) so the two show up distinctly in the tractor's own
   AUX-N assignment list. See
   [../docs/vt-ui-design.md](../docs/vt-ui-design.md#relay-indicator-grid-on-the-data-mask).
+- 2026-09-11: fixed a real labeling bug found during AUX-N assignment
+  testing: the toggle variant's `"R{n}#"` label had been left at its
+  pre-readability-pass size (16x10, 8x8 font) -- every *other* label got
+  bumped in that pass, this one was missed -- so it rendered as a clipped,
+  unlabeled "R" in the tractor's AUX-N assignment list. All 8 toggle
+  entries looked identical, which is exactly the kind of thing that leads
+  to assigning the wrong one. Fixed: same `"R{n}"` text as the hold-to-run
+  variant, sized to match, distinguished by an **underlined** font instead
+  of a suffix character (per bench feedback: "I'd also expect R1 to R8
+  there"). Buzzer's AUX-N designator also got its own dedicated `"B"`
+  label instead of reusing SK9's `"Bz"`, so it can't clip either.
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
