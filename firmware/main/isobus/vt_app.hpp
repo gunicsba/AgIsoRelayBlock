@@ -25,4 +25,15 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu);
 // connected (nothing to reflect yet).
 void set_interlock_state(int channel, bool di_active);
 
+// True once the VT client's own state machine reports StateMachineState::Connected.
+// AgIsoStack++'s client already retries the full connection handshake on
+// its own (every ~5s while in its Failed state, immediately once back in
+// Disconnected if the partner's address is valid and a fresh VT Status
+// broadcast has been seen -- see isobus_virtual_terminal_client.cpp's
+// update()), so there's no separate "reconnect" call to make from here.
+// This exists purely so app_main can log the connection state periodically
+// and make that retry loop visible on the wire, instead of only seeing
+// isolated error/success log lines.
+bool is_connected();
+
 }  // namespace iso::vt_app

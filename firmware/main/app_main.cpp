@@ -74,6 +74,7 @@ extern "C" void app_main(void) {
     iso::vt_app::init(internal_ecu);
 
     int tick = 0;
+    bool last_vt_connected = false;
 
     // 20ms cadence so automation::interlock::update() debounces digital
     // inputs (and reacts to a limit switch) quickly -- 3 samples at 20ms
@@ -82,6 +83,19 @@ extern "C" void app_main(void) {
     // slower rate via the tick counter instead of slowing the whole loop.
     while (true) {
         automation::interlock::update();
+
+        // AgIsoStack++'s VT client already retries its own connection
+        // handshake automatically in the background (every ~5s while
+        // failed, immediately once a fresh VT Status broadcast is seen) --
+        // there's no separate "reconnect" call to make. This just makes
+        // that retry loop visible: logged on every change, so a long gap
+        // with no line here is itself the evidence that it's stuck rather
+        // than actively retrying.
+        bool vt_connected = iso::vt_app::is_connected();
+        if (vt_connected != last_vt_connected) {
+            ESP_LOGI(kTag, "VT connection: %s", vt_connected ? "CONNECTED" : "not connected (client retries automatically)");
+            last_vt_connected = vt_connected;
+        }
 
         if (tick % 10 == 0) {  // ~200ms, matching the original heartbeat rate
             // Heartbeat: green while the relay expander is working and we

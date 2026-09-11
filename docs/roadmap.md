@@ -151,6 +151,24 @@ review:
     matches the cached one) with no recovery path except restarting the
     whole VT app. Worth reporting upstream to AgIsoStack++ if it
     reproduces with the address now stable.
+  - Checked whether our own **client** actively retries reconnecting, by
+    reading `isobus_virtual_terminal_client.cpp`'s state machine rather
+    than guessing: it does, automatically, with no code change needed --
+    `StateMachineState::Failed` resets to `Disconnected` after a fixed
+    5-second timeout (already visible in our logs as `"Resetting Failed
+    VT Connection"`), `Disconnected` re-checks the partner's address and
+    clears the last-seen VT Status timestamp so it genuinely waits for a
+    *fresh* status broadcast (not a stale one), and once one arrives it
+    walks the entire handshake again from scratch (Working Set Master →
+    Get Memory → ... → upload). So there's no missing reconnect logic on
+    our side to add. Added `iso::vt_app::is_connected()` (wraps
+    `VirtualTerminalClient::get_is_connected()`) and an edge-triggered log
+    line in `app_main.cpp`'s main loop instead, purely for visibility --
+    the state machine's internal state isn't otherwise exposed, so this
+    at least makes the connected/not-connected transitions visible over
+    time in future captures, to empirically confirm the retry loop is
+    running (or catch it if it somehow isn't) instead of inferring it
+    from sparse error/success log lines.
 
 ## Phase 4 — AUX-N
 

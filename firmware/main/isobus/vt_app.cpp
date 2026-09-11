@@ -239,4 +239,8 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
     ESP_LOGI(kTag, "VT client started, waiting for a Virtual Terminal on the bus...");
 }
 
+bool is_connected() {
+    return g_vt_client && g_vt_client->get_is_connected();
+}
+
 }  // namespace iso::vt_app

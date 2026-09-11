@@ -176,6 +176,19 @@ Bench-verified on real hardware (board on COM12):
   path -- SKM, AUX-N toggle, AUX-N momentary -- without touching each one
   separately. See
   [../docs/vt-ui-design.md](../docs/vt-ui-design.md#digital-input-indicators--limit-switch-interlock).
+- 2026-09-11: investigated "why doesn't our device reconnect on its own"
+  by reading AgIsoStack++'s `isobus_virtual_terminal_client.cpp` state
+  machine rather than guessing -- it already retries automatically, no
+  code change needed: `Failed` resets to `Disconnected` after a fixed 5s
+  timeout (visible in our logs as `"Resetting Failed VT Connection"`),
+  `Disconnected` clears the last-seen VT Status timestamp so it genuinely
+  waits for a fresh broadcast, and once one arrives the entire handshake
+  re-runs from scratch. Added `iso::vt_app::is_connected()` and an
+  edge-triggered log line in `app_main.cpp` purely for visibility, since
+  the state machine's internal state isn't otherwise exposed -- makes the
+  connected/not-connected transitions visible over time in future
+  captures instead of inferring the retry loop from sparse log lines. See
+  [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
