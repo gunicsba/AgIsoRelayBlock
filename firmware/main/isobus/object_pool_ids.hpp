@@ -26,6 +26,8 @@ inline uint16_t softkey_id(int key_number) { return 1210 + key_number; }
 // Soft Key Mask page 2: channel 1-8 = momentary override, plus a back key.
 inline uint16_t softkey2_id(int channel) { return 1250 + channel; }
 constexpr uint16_t kSoftkeyBack = 1260;
+constexpr uint16_t kSoftkeyOverrideToggle = 1262;
+constexpr uint16_t kOverrideCheckboxFillAttr = 1940;
 
 // AUX-N Auxiliary Function Type 2 objects. channel: 1-8.
 inline uint16_t aux_latch_function_id(int channel) { return 1500 + channel; }

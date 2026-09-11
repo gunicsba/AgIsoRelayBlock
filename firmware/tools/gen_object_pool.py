@@ -122,6 +122,19 @@ def softkey2_id(channel):  # channel: 1-8, momentary override page
 
 ID_SOFTKEY_BACK = 1260
 ID_SOFTKEY_BACK_LABEL = 1261
+ID_SOFTKEY_OVERRIDE = 1262  # page 2, SK10: toggles ID_OVERRIDE_CHECKBOX_FILL
+ID_SOFTKEY_OVERRIDE_LABEL = 1263
+
+# "Momentary Override Safety" checkbox (Data Mask, visible on both SKM
+# pages): unfilled = interlock enforced as normal (default, safe), filled =
+# a momentary AUX-N/SKM press is allowed to turn a channel back on even
+# while its DI interlock has it disabled. Never persisted -- always starts
+# unfilled/off at boot, matching the object pool's own static default, so
+# the safety feature can never be silently bypassed by a power cycle. See
+# docs/vt-ui-design.md.
+ID_OVERRIDE_CHECKBOX_RECT = 1140
+ID_OVERRIDE_CHECKBOX_LABEL = 1141
+ID_OVERRIDE_CHECKBOX_FILL = 1940
 
 
 def u16(value):
@@ -341,6 +354,23 @@ def build_pool():
         data_mask_children.append((label_id, x, label_y))
         data_mask_children.append((di_id, x, di_y))
 
+    # --- "Momentary Override Safety" checkbox, below the relay grid.
+    # Unfilled (default/safe) = a momentary AUX-N/SKM press is refused like
+    # any other control path while the channel's DI interlock has it
+    # disabled. Filled = that one path (only that one -- toggle SKM/AUX-N
+    # still always refused) is allowed to turn the channel back on anyway,
+    # e.g. to nudge an actuator past a limit switch on purpose. See
+    # docs/vt-ui-design.md for the full rationale/example.
+    CHECKBOX_SIZE = 24
+    override_y = TOP_MARGIN + 2 * ROW_SPACING + 20
+    objects.append(make_fill_attributes(ID_OVERRIDE_CHECKBOX_FILL, fill_type=0, colour=COLOUR_BLACK))
+    objects.append(make_output_rectangle(ID_OVERRIDE_CHECKBOX_RECT, CHECKBOX_SIZE, CHECKBOX_SIZE,
+                                          ID_OVERRIDE_CHECKBOX_FILL))
+    objects.append(make_output_string(ID_OVERRIDE_CHECKBOX_LABEL, 220, 12,
+                                       "Momentary Override Safety", font_id=ID_FONT))
+    data_mask_children.append((ID_OVERRIDE_CHECKBOX_RECT, LEFT_MARGIN, override_y))
+    data_mask_children.append((ID_OVERRIDE_CHECKBOX_LABEL, LEFT_MARGIN + CHECKBOX_SIZE + 8, override_y + 6))
+
     # --- Soft Key Mask page 1 (default/initial): SK1-SK8 (relay toggles) +
     # SK9 (buzzer) + SK10 (next page). Emitted *before* the Data Mask that
     # references it, and Key objects before the mask that references them:
@@ -384,6 +414,13 @@ def build_pool():
     objects.append(make_output_string(ID_SOFTKEY_BACK_LABEL, RECT_SIZE, LABEL_HEIGHT, "<<", font_id=ID_FONT_LARGE))
     objects.append(make_key(ID_SOFTKEY_BACK, key_code=9, children=[(ID_SOFTKEY_BACK_LABEL, 2, 2)]))
     page2_key_ids.append(ID_SOFTKEY_BACK)
+
+    # Toggles the "Momentary Override Safety" checkbox above (terse "OR"
+    # label -- the full name is spelled out next to the checkbox on the
+    # Data Mask itself, same convention as ">>"/"<<"/"BZ" elsewhere).
+    objects.append(make_output_string(ID_SOFTKEY_OVERRIDE_LABEL, RECT_SIZE, LABEL_HEIGHT, "OR", font_id=ID_FONT_LARGE))
+    objects.append(make_key(ID_SOFTKEY_OVERRIDE, key_code=10, children=[(ID_SOFTKEY_OVERRIDE_LABEL, 2, 2)]))
+    page2_key_ids.append(ID_SOFTKEY_OVERRIDE)
 
     objects.append(make_soft_key_mask(page2_key_ids, mask_id=ID_SOFT_KEY_MASK_2))
 
@@ -470,6 +507,8 @@ def generate_ids_header():
         "// Soft Key Mask page 2: channel 1-8 = momentary override, plus a back key.",
         "inline uint16_t softkey2_id(int channel) {{ return {} + channel; }}".format(1250),
         "constexpr uint16_t kSoftkeyBack = {};".format(ID_SOFTKEY_BACK),
+        "constexpr uint16_t kSoftkeyOverrideToggle = {};".format(ID_SOFTKEY_OVERRIDE),
+        "constexpr uint16_t kOverrideCheckboxFillAttr = {};".format(ID_OVERRIDE_CHECKBOX_FILL),
         "",
         "// AUX-N Auxiliary Function Type 2 objects. channel: 1-8.",
         "inline uint16_t aux_latch_function_id(int channel) {{ return {} + channel; }}".format(1500),

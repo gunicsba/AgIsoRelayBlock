@@ -43,16 +43,19 @@ bool is_connected();
 // function code doesn't match what we filter for.
 bool is_partner_claimed();
 
-// Overwrites the Data Mask title with "AgIsoRelayBlock <build version>"
-// (the version comes from esp_app_get_description(), which ESP-IDF
-// populates from `git describe --always --dirty` at build time -- see
-// firmware/main/isobus/vt_app.cpp). Call once right after is_connected()
-// transitions to true; the object pool ships with just "AgIsoRelayBlock"
-// since the version isn't known at pool-generation time. Makes "which
-// firmware build is actually flashed and running" visible on the VT
-// screen itself, instead of only in a serial log -- useful any time a
-// bug report needs to be matched to an exact commit, e.g. an uncommitted
-// ("-dirty") build vs a clean one.
-void send_version_info();
+// Re-pushes everything the Data Mask displays to match our actual state:
+// the build version in the title (esp_app_get_description(), ESP-IDF's
+// automatic `git describe --always --dirty` -- makes "which firmware
+// build is actually flashed and running" visible on the VT screen, not
+// just in a serial log), every relay's fill, every DI interlock's fill +
+// "!" label marker, and the Momentary Override Safety checkbox. Call once
+// right after is_connected() transitions to true. Necessary, not just
+// nice-to-have: a fresh connection means a fresh object pool upload,
+// which resets every fill/label to the static pool's built-in defaults,
+// but none of our own state (relay outputs, DI status, the override
+// checkbox) resets on a reconnect -- only on an actual firmware reboot --
+// so without this, a VT-side hiccup and reconnect would leave the screen
+// showing all-off/unchecked while the real state underneath disagreed.
+void resync_display();
 
 }  // namespace iso::vt_app

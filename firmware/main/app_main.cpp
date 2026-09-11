@@ -103,12 +103,11 @@ extern "C" void app_main(void) {
         if (vt_connected != last_vt_connected) {
             ESP_LOGI(kTag, "VT connection: %s", vt_connected ? "CONNECTED" : "not connected (client retries automatically)");
             if (vt_connected) {
-                // The object pool ships with a static "AgIsoRelayBlock"
-                // title (the build version isn't known at pool-generation
-                // time) -- overwrite it now that we're connected, so which
-                // firmware build is actually running is visible on the VT
-                // screen itself.
-                iso::vt_app::send_version_info();
+                // Fresh connection == fresh object pool upload == every
+                // fill/label reset to the static pool's defaults -- push
+                // our actual state (relay/DI/override-checkbox) and the
+                // build version back onto the screen.
+                iso::vt_app::resync_display();
             }
             last_vt_connected = vt_connected;
         }

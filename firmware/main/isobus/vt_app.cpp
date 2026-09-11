@@ -30,6 +30,16 @@ constexpr uint8_t kColourBlack = 0;
 std::shared_ptr<isobus::VirtualTerminalClient> g_vt_client;
 std::shared_ptr<isobus::PartneredControlFunction> g_vt_partner;
 
+// "Momentary Override Safety" (docs/vt-ui-design.md): unfilled/off by
+// default, and deliberately never persisted -- always starts false at
+// boot, same as every relay (N4's safe-default philosophy applied to this
+// setting too), so the interlock can never be silently bypassed by a
+// power cycle. When true, ONLY the momentary override path below (AUX-N
+// momentary function or an SKM page-2 momentary key) is allowed to turn a
+// channel back on while its DI has it disabled; the toggle paths (SK1-8,
+// the AUX-N latch variant) never bypass it regardless of this setting.
+bool g_momentary_override_safety_enabled = false;
+
 // The relay driver is the one source of truth for relay state (per
 // docs/vt-ui-design.md's precedence rule: last action wins, no input path
 // is more authoritative than another). Every path that changes a relay --
@@ -37,13 +47,20 @@ std::shared_ptr<isobus::PartneredControlFunction> g_vt_partner;
 // Mask indicator always reflects reality, and so the Phase 6 limit-switch
 // interlock only needs to be enforced in this one place: an ON request is
 // refused while the channel's paired DI is active (see automation/interlock.hpp),
-// regardless of which control path asked for it. Turning OFF is never
-// blocked. Returns false (and leaves the relay untouched) if refused by
-// the interlock or if the I2C write itself failed.
-bool apply_relay_state(int channel, bool new_state) {
+// regardless of which control path asked for it, UNLESS the caller passes
+// bypass_interlock=true -- reserved for handle_momentary_override() when
+// g_momentary_override_safety_enabled is set, so an operator can
+// deliberately nudge an actuator past a limit switch (see that function's
+// comment). Turning OFF is never blocked either way. Returns false (and
+// leaves the relay untouched) if refused by the interlock or if the I2C
+// write itself failed.
+bool apply_relay_state(int channel, bool new_state, bool bypass_interlock = false) {
     if (new_state && automation::interlock::is_disabled(channel)) {
-        ESP_LOGW(kTag, "relay %d: ON request refused, disabled by its DI limit switch", channel);
-        return false;
+        if (!bypass_interlock) {
+            ESP_LOGW(kTag, "relay %d: ON request refused, disabled by its DI limit switch", channel);
+            return false;
+        }
+        ESP_LOGW(kTag, "relay %d: ON while disabled by its DI limit switch, allowed anyway -- Momentary Override Safety is checked", channel);
     }
     if (!io::relay_driver::set_relay(channel, new_state)) {
         ESP_LOGE(kTag, "relay %d set_relay failed", channel);
@@ -72,6 +89,15 @@ bool apply_relay_state(int channel, bool new_state) {
 // report status periodically even while idle, so its own idle "released"
 // reports kept silently overriding whatever the toggle variant had set --
 // see docs/vt-ui-design.md#aux-n-functions-17-total).
+//
+// This is also the one path that can bypass the DI interlock, gated by
+// g_momentary_override_safety_enabled: e.g. an auto-mode that stops a
+// hydraulic cylinder at a DI-triggered limit partway through its travel,
+// where the operator sometimes deliberately needs to push past it (see
+// docs/vt-ui-design.md). Only the rising-edge (press) call needs the
+// bypass -- restoring on release only ever turns a channel OFF or back to
+// whatever it legitimately was already, neither of which the interlock
+// blocks anyway.
 struct MomentaryOverrideState {
     bool last_input_state = false;
     bool saved_state_before_press = false;
@@ -83,7 +109,7 @@ void handle_momentary_override(int channel, bool pressed) {
     if (pressed && !st.last_input_state) {
         // Rising edge: remember the current state, invert it.
         st.saved_state_before_press = io::relay_driver::get_relay(channel);
-        apply_relay_state(channel, !st.saved_state_before_press);
+        apply_relay_state(channel, !st.saved_state_before_press, g_momentary_override_safety_enabled);
     } else if (!pressed && st.last_input_state) {
         // Falling edge: restore.
         if (io::relay_driver::get_relay(channel) != st.saved_state_before_press) {
@@ -113,6 +139,17 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
         bool ok = g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
                                                         object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask);
         ESP_LOGI(kTag, "SK back: switch to page 1 -> %s", ok ? "sent" : "FAILED to send");
+        return;
+    }
+
+    if (event.objectID == object_pool_ids::kSoftkeyOverrideToggle) {
+        g_momentary_override_safety_enabled = !g_momentary_override_safety_enabled;
+        ESP_LOGI(kTag, "Momentary Override Safety: %s", g_momentary_override_safety_enabled ? "CHECKED (momentary can bypass DI interlock)" : "unchecked (default)");
+        g_vt_client->send_change_fill_attributes(
+            object_pool_ids::kOverrideCheckboxFillAttr,
+            g_momentary_override_safety_enabled ? isobus::VirtualTerminalClient::FillType::FillWithSpecifiedColourInFillColourAttribute
+                                                 : isobus::VirtualTerminalClient::FillType::NoFill,
+            kColourBlack, isobus::NULL_OBJECT_ID);
         return;
     }
 
@@ -269,10 +306,29 @@ bool is_partner_claimed() {
     return g_vt_partner && g_vt_partner->get_address_valid();
 }
 
-void send_version_info() {
+// A fresh VT connection means a fresh object pool upload, which resets
+// every fill/label to the static pool's defaults -- but our own state
+// (relay outputs, DI interlock status, the override checkbox) isn't
+// reset by a reconnect, only by an actual firmware reboot. Without this,
+// a VT-side hiccup and reconnect (not a power cycle) would leave the
+// screen showing all-off/all-unchecked while the real state underneath
+// disagreed, until the next state *change* happened to correct it.
+// Re-pushes everything unconditionally, reusing the same functions any
+// state change already goes through (each is safe to call with an
+// unchanged value -- apply_relay_state's I2C write and
+// set_interlock_state's force-off check are both no-ops in that case,
+// they just also unconditionally resend the VT-facing fill/label either
+// way, which is exactly what's needed here).
+void resync_display() {
     if (!g_vt_client) {
         return;
     }
+
+    // The object pool ships with a static "AgIsoRelayBlock" title (the
+    // build version isn't known at pool-generation time) -- overwrite it
+    // with esp_app_get_description()->version (ESP-IDF's automatic
+    // `git describe --always --dirty`), so which exact firmware build is
+    // running is visible on the VT screen itself, not just a serial log.
     std::string title = std::string("AgIsoRelayBlock ") + esp_app_get_description()->version;
     // Only truncate if needed -- a shorter string is safe to send as-is
     // (the VT pads it with spaces to the object's existing length itself,
@@ -283,6 +339,16 @@ void send_version_info() {
         title.resize(object_pool_ids::kTitleStringMaxChars);
     }
     g_vt_client->send_change_string_value(object_pool_ids::kTitleString, title);
+
+    for (int ch = 1; ch <= 8; ++ch) {
+        apply_relay_state(ch, io::relay_driver::get_relay(ch));
+        set_interlock_state(ch, automation::interlock::is_disabled(ch));
+    }
+    g_vt_client->send_change_fill_attributes(
+        object_pool_ids::kOverrideCheckboxFillAttr,
+        g_momentary_override_safety_enabled ? isobus::VirtualTerminalClient::FillType::FillWithSpecifiedColourInFillColourAttribute
+                                             : isobus::VirtualTerminalClient::FillType::NoFill,
+        kColourBlack, isobus::NULL_OBJECT_ID);
 }
 
 }  // namespace iso::vt_app

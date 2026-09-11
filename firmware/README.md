@@ -272,6 +272,23 @@ Bench-verified on real hardware (board on COM12):
   root-caused -- see
   [../docs/roadmap.md](../docs/roadmap.md#phase-6--automation-rules) for
   status.
+- 2026-09-11: added a "Momentary Override Safety" checkbox (SKM page 2,
+  SK10) letting the operator deliberately allow the momentary override
+  path only (never the toggle paths) to bypass a channel's DI interlock --
+  e.g. an auto-mode that normally stops a hydraulic cylinder at a soft
+  limit, with an escape hatch for when it needs to go further on purpose.
+  Never persisted across a reboot, same reasoning as relay outputs already
+  not persisting (N4). Building it surfaced a real gap: nothing re-synced
+  relay/DI/checkbox visual state after a VT *reconnect* (a fresh pool
+  upload resets every fill/label to static defaults, but none of our state
+  resets on a reconnect) -- fixed by replacing the narrower
+  `send_version_info()` with a general `resync_display()` that pushes
+  everything on every fresh connection. Also documented a real gap found
+  in vendored AgIsoStack++ while looking into AUX-N assignment persistence
+  -- see [Known gaps in vendored AgIsoStack++](#known-gaps-in-vendored-agisostack)
+  above. See
+  [../docs/vt-ui-design.md](../docs/vt-ui-design.md#momentary-override-safety-checkbox)
+  and [../docs/roadmap.md](../docs/roadmap.md#phase-6--automation-rules).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
@@ -279,6 +296,91 @@ AgIsoStack++ is vendored as a pinned git submodule under
 `idf_component_register`-based `CMakeLists.txt` since upstream ships a
 plain-CMake project rather than a native IDF component -- see
 [components/AgIsoStack-plus-plus/CMakeLists.txt](components/AgIsoStack-plus-plus/CMakeLists.txt).
+
+## Known gaps in vendored AgIsoStack++
+
+Bugs/gaps found in the vendored library itself while building this
+project, worth fixing upstream rather than working around here. See
+[docs/roadmap.md](../docs/roadmap.md#phase-4--aux-n) for the full
+investigation trail behind each.
+
+**AUX-N preferred-assignment persistence is unimplemented (2026-09-11).**
+`VirtualTerminalClient` sends/receives all the right messages at all the
+right protocol moments (confirmed via the `"Sent preferred assignments
+after ..."` log lines in `isobus_virtual_terminal_client.cpp`), but three
+`//! @todo` comments mark where the actual load-from/save-to persistent
+storage should happen and never does:
+
+- `send_auxiliary_functions_preferred_assignment()` (~line 1980) always
+  sends a `PreferredAssignmentCommand` announcing zero preferred
+  assignments -- `//! @todo load preferred assignment from saved
+  configuration`.
+- The `PreferredAssignmentCommand` response handler (~line 2624) doesn't
+  load the confirmed assignment into `assignedAuxiliaryInputDevices` --
+  `//! @todo load the preferred assignment into
+  parentVT->assignedAuxiliaryInputDevices`.
+- The `AuxiliaryAssignmentTypeTwoCommand` handler, in both the
+  unassign (~line 2662) and assign (~line 2690) branches, checks
+  `storeAsPreferred` and does nothing with it -- `//! @todo save preferred
+  assignment to persistent configuration`.
+
+Net effect: every reconnect requires the operator to manually reassign
+every joystick/armrest button to our AUX-N functions from the tractor's
+own AUX-N menu, since the client can never tell the VT what it remembers
+from last time (because it remembers nothing). Ready-to-use prompt for
+fixing this upstream, written to be handed to a fresh Claude Code session
+with no other context, working directly in a clone of
+[AgIsoStack-plus-plus](https://github.com/Open-Agriculture/AgIsoStack-plus-plus)
+(this repo's `firmware/components/AgIsoStack-plus-plus/upstream` submodule
+remote):
+
+> I'm looking at `isobus_virtual_terminal_client.cpp` in this repo
+> (AgIsoStack++, a C++ ISOBUS/J1939 stack). AUX-N "preferred assignment"
+> support is half-implemented: the protocol messaging is all correct
+> (`send_auxiliary_functions_preferred_assignment()` is called at the
+> right moments, from `SendWorkingSetMasterMessage`'s state-machine
+> handling after both `LoadVersionCommand` and `EndOfObjectPoolMessage`),
+> but the actual persistence behind it is just three TODO comments and a
+> hardcoded empty response:
+>
+> 1. `send_auxiliary_functions_preferred_assignment()` (around line 1980)
+>    builds `{ Function::PreferredAssignmentCommand, 0 }` -- always zero
+>    preferred assignments -- next to `//! @todo load preferred assignment
+>    from saved configuration`.
+> 2. The `Function::PreferredAssignmentCommand` response handler (around
+>    line 2624) has `//! @todo load the preferred assignment into
+>    parentVT->assignedAuxiliaryInputDevices` and does nothing on success.
+> 3. The `Function::AuxiliaryAssignmentTypeTwoCommand` handler has two
+>    `//! @todo save preferred assignment to persistent configuration`
+>    spots (around lines 2662 and 2690, the unassign and assign branches)
+>    gated on the incoming message's `storeAsPreferred` bit, doing
+>    nothing either.
+>
+> `assignedAuxiliaryInputDevices` is a
+> `std::vector<AssignedAuxiliaryInputDevice>` (see the struct in
+> `isobus_virtual_terminal_client.hpp`, holding NAME + model
+> identification code + a `std::vector<AssignedAuxiliaryFunction>` of
+> function/input/type triples) -- that's the in-memory shape; nothing
+> currently writes or reads it to storage.
+>
+> Please implement real persistence behind these three TODOs. This
+> library runs on embedded targets without a filesystem as standard (this
+> project's own consumer is ESP-IDF/ESP32), so don't assume one -- design
+> a small abstraction (e.g. a virtual/injectable `AuxiliaryPreferredAssignmentRepository`
+> interface with `load()`/`save()`, or whatever fits this codebase's
+> existing patterns for injectable persistence, if it has any already --
+> check `isobus_virtual_terminal_client.hpp`'s constructors and any
+> similar interfaces first) so each platform's consumer can back it with
+> whatever it has (NVS on ESP32, a file on Linux/PC targets, etc.),
+> defaulting to a no-op/in-memory implementation so behavior for existing
+> consumers who don't wire up a real backend doesn't change. Cover it with
+> unit tests (see the existing `test/vt_client_tests.cpp` for the style
+> already used in this repo) exercising: assigning with
+> `storeAsPreferred=true` persists and is re-sent as a preferred
+> assignment on the next connection; unassigning with `storeAsPreferred`
+> removes it; assigning without `storeAsPreferred` doesn't persist.
+> Once implemented and tested, open a PR against this repo with a clear
+> description referencing these three TODO locations.
 
 ## Build
 

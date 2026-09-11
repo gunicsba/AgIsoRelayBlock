@@ -335,12 +335,40 @@ review:
       Data Mask gets updated; neither path is more authoritative, matching
       requirement F11.
 
+**Known gap, upstream (2026-09-11):** AUX-N "preferred assignment"
+persistence isn't actually implemented in AgIsoStack++, even though the
+protocol wiring around it is. Per ISO 11783-6, a function-providing client
+(us) is supposed to remember which physical joystick/armrest input the
+operator last assigned to each of our functions, and re-announce that as
+a "preferred assignment" on every future connection, so the operator
+doesn't have to redo the assignment from the tractor's AUX-N menu every
+power cycle. `isobus_virtual_terminal_client.cpp` calls
+`send_auxiliary_functions_preferred_assignment()` at exactly the right
+protocol moments (after `LoadVersionCommand` and after
+`EndOfObjectPoolMessage` -- confirmed by the `"Sent preferred assignments
+after ..."` log lines), but that function's body is just
+`{ Function::PreferredAssignmentCommand, 0 }` next to a
+`//! @todo load preferred assignment from saved configuration` comment --
+it always announces zero preferred assignments. The save side has the
+same gap: when the VT sends an `AuxiliaryAssignmentTypeTwoCommand` with
+`storeAsPreferred` set, two more `//! @todo save preferred assignment to
+persistent configuration` comments mark where that should be written to
+non-volatile storage and never are. Net effect: every reconnect requires
+the operator to manually reassign every joystick button to our AUX-N
+functions from scratch. Not something to route around in this repo (it's
+a real gap in the library, not a workaround-able quirk of our own object
+pool) -- see the ready-to-use prompt for fixing it upstream in
+[firmware/README.md](../firmware/README.md#known-gaps-in-vendored-agisostack).
+
 ## Phase 5 — Naming, icons, persistence
 
 - [ ] Add Input String objects for renaming channels from the VT.
 - [ ] Add a small built-in icon set (Picture Graphics) + Object Pointer
       based icon picker per channel.
-- [ ] Persist names/icons/AUX-N bookkeeping to NVS; reload on boot.
+- [ ] Persist names/icons/AUX-N bookkeeping to NVS; reload on boot. AUX-N
+      preferred-assignment persistence specifically also needs the
+      upstream AgIsoStack++ gap noted at the end of Phase 4 fixed first --
+      there's currently nothing on our side to hook into.
 - [ ] Confirm renamed channels show correctly both on our Data Mask *and*
       the tractor's native AUX-N assignment page (this is the specific
       "type it once, it shows up everywhere" behavior being replicated).
@@ -430,6 +458,30 @@ that actually motivated this phase, rather than the fully generic
   8 relay channels right next to the DI inputs), possibly something else;
   waiting on confirmation of whether those channels are actually wired to
   anything on the bench before adding more debounce/filtering.
+- Added a "Momentary Override Safety" checkbox (unchecked/off by default,
+  toggled by SK10 on SKM page 2) letting the operator deliberately allow
+  the momentary override path (only that one -- toggle paths never bypass
+  it) to turn a channel back on past its DI interlock, for cases like an
+  auto-mode that normally stops a hydraulic cylinder at a soft limit but
+  occasionally needs to push past it on purpose. Deliberately never
+  persisted across a reboot, same reasoning as relay outputs already not
+  persisting (N4): a bypassed safety limit shouldn't be able to survive a
+  power cycle silently. See
+  [vt-ui-design.md](vt-ui-design.md#momentary-override-safety-checkbox)
+  for the full design and motivating example.
+
+  Implementing this surfaced a real pre-existing gap while touching the
+  connection code: nothing re-synced relay/DI/checkbox visual state after
+  a VT *reconnect* (as opposed to a full firmware reboot) -- a fresh
+  connection re-uploads the object pool, which resets every fill/label to
+  the static pool's defaults, but none of our own state resets on a
+  reconnect. Fixed by replacing the single-purpose
+  `iso::vt_app::send_version_info()` with a general
+  `iso::vt_app::resync_display()`, called on every fresh connection, that
+  re-pushes the build-version title *and* every relay/DI/checkbox fill and
+  label to match actual current state -- reusing the same functions any
+  state change already goes through, so there's no separate code path to
+  keep in sync.
 
 ## Phase 7 — WiFi AP & OTA
 

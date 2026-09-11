@@ -78,13 +78,14 @@ bitmap graphics:
   respond, without having to notice the smaller DI box.
 
 While DI{n} is active: channel {n} is forced off immediately (if it was
-on) and refuses to be turned back on by any control path (SKM, AUX-N
-toggle, AUX-N momentary) — enforced in one place,
-`vt_app.cpp`'s `apply_relay_state`, so every control path is protected
-without having to duplicate the check. When DI{n} goes inactive again,
-the channel stays off; the operator has to explicitly command it on
-again, matching this project's "safe defaults" requirement (N4) — a limit
-switch releasing shouldn't by itself resume motion.
+on) and refuses to be turned back on by any control path (SKM toggle,
+AUX-N toggle) except the momentary override path, which can bypass it if
+the operator has deliberately enabled that (see below) — enforced in one
+place, `vt_app.cpp`'s `apply_relay_state`, so every control path is
+protected without having to duplicate the check. When DI{n} goes inactive
+again, the channel stays off; the operator has to explicitly command it
+on again, matching this project's "safe defaults" requirement (N4) — a
+limit switch releasing shouldn't by itself resume motion.
 
 **Bench-confirmed real use case**: a hydraulic cylinder's end-stop switch
 wired to DI3, pulled to DGND when the cylinder reaches full travel (see
@@ -95,6 +96,41 @@ channel 3's output is force-disabled — stopping further movement in that
 direction without needing any external limit-switch relay or interposing
 logic, and without the operator having to notice anything except the "!"
 on the screen.
+
+## "Momentary Override Safety" checkbox
+
+A single, device-wide checkbox (unfilled/unchecked by default) on the
+Data Mask, below the relay grid, toggled by SK10 on SKM page 2 (terse
+"OR" label, next to the momentary-override keys it controls — see
+`gen_object_pool.py`'s comment for why "OR" rather than spelling it out
+there; the full name is the label printed next to the checkbox itself).
+
+**Motivating example**: an auto-mode drives a hydraulic cylinder (e.g. a
+rear door) and normally stops it at a DI-triggered limit partway through
+its travel — not a hard end-stop, a deliberate soft limit for the normal
+case. Occasionally the operator needs to push past that limit on purpose
+(the door needs to open further than usual, just this once). With the
+checkbox **unchecked** (default): pressing the momentary AUX-N/SKM button
+past the limit does nothing, same as any other control path — the
+interlock wins. With it **checked**: that one momentary button is allowed
+to turn the channel back on despite the limit being active, for as long
+as it's held, so the operator can nudge the actuator further — while the
+plain toggle paths (SK1–SK8, the AUX-N latch variant) still always refuse
+regardless of this checkbox, so a stray/accidental toggle press can never
+be the thing that bypasses a safety limit; only a deliberate hold of the
+momentary control can.
+
+**Deliberately never persisted across a reboot** (`g_momentary_override_safety_enabled`
+in `vt_app.cpp` is a plain in-memory `bool`, not written to NVS): if this
+state survived a power cycle, the machine could start up with a safety
+limit silently bypassed with no operator action having happened that
+session — checking whether it's still checked isn't something an operator
+reliably remembers to do after every restart. Always boots (and every
+fresh VT connection re-syncs the checkbox visual to, via
+`resync_display()`) to unchecked/safe; enabling the override is a
+deliberate per-session choice. Relay outputs follow the same
+never-persisted, always-off-at-boot rule (`io::relay_driver::init()`, N4)
+for the same reason.
 
 ## Soft Key Masks: two pages, reached via a next/back key
 
