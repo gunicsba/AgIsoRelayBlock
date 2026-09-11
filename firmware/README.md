@@ -367,6 +367,27 @@ Bench-verified on real hardware (board on COM12):
   something. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-8--robustness--polish).
 
+- 2026-09-11: **fixed the ECU being unable to reconnect to the VT after
+  its own power cycle** -- unplug the ECU, plug it back in, and it would
+  sit there forever with no VT; only restarting the *Virtual Terminal*
+  brought it back, which is obviously unusable on a real machine. Root
+  cause was in vendored AgIsoStack++, not this firmware:
+  `update_new_partners()` binds a partner by replacing the matching
+  external CF in `controlFunctionTable` with the partner object, without
+  carrying over `claimedAddressSinceLastAddressClaimRequest` -- so the
+  partner lands in the table flagged as "hasn't claimed", and
+  `prune_inactive_control_functions()` drops it 755 ms after the global
+  address-claim request that our own boot-time claim procedure emits. The
+  kill is permanent, because pruning nulls the address while leaving
+  `initialized == true`, and partners are only ever bound when
+  `initialized` is false. Fixed in
+  [patches/0001-nm-keep-claim-state-when-binding-partner.patch](patches/0001-nm-keep-claim-state-when-binding-partner.patch)
+  (see [patches/README.md](patches/README.md) for the full trace, and why
+  upstream PR #719 is related but wouldn't fix this). Bench-verified:
+  reset the ECU with the VT running and it now reconnects on its own in
+  ~1 s (`VT connection: CONNECTED` + full display resync), where before it
+  logged `Control function ... is now offline` and never recovered.
+
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
 (clone with `git submodule update --init --recursive`), wrapped in a thin
@@ -467,12 +488,23 @@ v5.3.x with the `esp32s3` target installed.
 ```sh
 git submodule update --init --recursive   # pulls vendored AgIsoStack++
 
+# REQUIRED: fixes we carry against the vendored stack -- see patches/README.md.
+# Without this the device cannot reconnect to a VT after its own power cycle.
+cd firmware/components/AgIsoStack-plus-plus/upstream
+git apply ../../../patches/*.patch
+cd ../../../..
+
 # from an ESP-IDF export'd shell (or the VS Code ESP-IDF extension terminal)
 cd firmware
 idf.py set-target esp32s3
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
+
+> The submodule is pinned by commit, so edits inside it aren't captured by
+> this repo's commits and are lost on a fresh `git submodule update`. The
+> patches in [patches/](patches/) are the record — apply them after every
+> fresh clone or submodule update, until they land upstream.
 
 ### Flashing a brand-new/blank board
 

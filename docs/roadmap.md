@@ -551,6 +551,28 @@ that actually motivated this phase, rather than the fully generic
 
 ## Phase 8 — Robustness & polish
 
+- [x] **Fixed: the ECU could not reconnect to a VT after its own power
+      cycle.** Unplug the ECU, wait, plug it back in → no VT, forever;
+      only restarting the *Virtual Terminal* recovered it. Unusable on a
+      real machine, where a loose connector would otherwise mean
+      restarting the whole terminal in the right order. Root cause was in
+      vendored AgIsoStack++, not this firmware: binding a
+      `PartneredControlFunction` replaces the matching external CF in the
+      network manager's table without carrying over
+      `claimedAddressSinceLastAddressClaimRequest`, so the partner is
+      immediately eligible for `prune_inactive_control_functions()`, which
+      fires 755 ms after the global address-claim request our own boot-time
+      claim emits — and the kill is permanent, since pruning nulls the
+      address while leaving `initialized == true` and partners are only
+      bound while that's false. Fixed in
+      [firmware/patches/](../firmware/patches/) (full trace and
+      reasoning in that directory's README, including why upstream PR
+      [#719](https://github.com/Open-Agriculture/AgIsoStack-plus-plus/pull/719)
+      is related but insufficient on its own). Bench-verified: reconnects
+      unattended in ~1 s. **Still to do:** report this upstream, and
+      re-point the submodule at a fork carrying the fix so a fresh clone
+      doesn't silently lose it (the patch file + build-step note is the
+      interim safeguard).
 - [ ] Decide + implement documented behavior on VT/bus disconnect (hold
       last state vs. force all outputs off), configurable.
 - [ ] RGB LED / buzzer status indication (power, CAN activity, VT
