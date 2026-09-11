@@ -10,6 +10,7 @@ idf_component_register(
         "io/buzzer_driver.cpp"
         "isobus/ecu_identity.cpp"
         "isobus/vt_app.cpp"
+        "isobus/diagnostics.cpp"
         "automation/interlock.cpp"
         "net/wifi_ap.cpp"
         "net/web_server.cpp"

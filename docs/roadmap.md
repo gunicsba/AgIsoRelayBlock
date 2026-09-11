@@ -555,7 +555,45 @@ that actually motivated this phase, rather than the fully generic
       last state vs. force all outputs off), configurable.
 - [ ] RGB LED / buzzer status indication (power, CAN activity, VT
       connected/disconnected).
-- [ ] DM1 diagnostics for detectable fault conditions.
+- [x] DM1 diagnostics for detectable fault conditions -- see
+      [isobus/diagnostics.cpp](../firmware/main/isobus/diagnostics.cpp), a
+      thin wrapper around AgIsoStack++'s `isobus::DiagnosticProtocol`
+      (already a complete DM1/DM2/DM3 implementation -- driven by
+      registering `DiagnosticProtocol::update()` on
+      `CANHardwareInterface::get_periodic_update_event_dispatcher()`,
+      matching the library's own `examples/diagnostic_protocol`, rather
+      than pumping it from our own tick loop). Covers the two conditions
+      this firmware can actually detect right now: VT connection lost
+      (edge-triggered off `iso::vt_app::is_connected()` in `app_main.cpp`,
+      only *after* the first successful connection each boot -- not yet
+      having connected on power-up isn't a fault) and a relay I2C write
+      failure (hooked into `vt_app.cpp`'s `apply_relay_state()`, the one
+      place every control path already funnels through, so this covers
+      SKM/AUX-N/web-UI relay writes with a single hook rather than one per
+      caller). Both use `FailureModeIdentifier::ConditionExists` (no more
+      specific FMI honestly fit either condition) and SPNs picked from
+      J1939's 520192-524287 "manufacturer assignable" reserved block --
+      **not officially SAE-registered SPNs** (this project has no SAE
+      membership), documented as internal placeholders in
+      `diagnostics.cpp` rather than presented as real registered values.
+
+      **Explicitly not covered** (still open, matching F17's original
+      wording): CAN bus-off isn't continuously monitored (only checked
+      once, at the Phase 1 bring-up self-test) -- would need periodic
+      TWAI status polling, not implemented yet. Config-corruption fallback
+      doesn't apply yet (no persisted config exists to corrupt). Relay
+      faults are I2C-communication-failure detection only, per
+      [hardware.md](hardware.md#why-this-board-fits-an-isobus-relay-block)'s
+      already-documented gap: this board has no per-channel feedback path,
+      so a relay that fails to *physically* switch despite a successful
+      I2C write is undetectable regardless of what this firmware does.
+
+      Built, flashed to COM12, bench-confirmed clean boot (`"diagnostics:
+      DM1 diagnostics started"`, no crash) -- not yet bench-confirmed that
+      a real DM1 broadcast is correctly received/decoded by a DM1-capable
+      tool, since triggering either condition requires deliberately
+      breaking something (disconnecting the VT, or the I2C bus) that
+      wasn't done this session.
 - [ ] Factory-reset path back to safe defaults (including WiFi AP
       password reset).
 

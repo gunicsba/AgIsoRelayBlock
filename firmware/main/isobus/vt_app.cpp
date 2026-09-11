@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "io/buzzer_driver.hpp"
 #include "io/relay_driver.hpp"
+#include "isobus/diagnostics.hpp"
 #include "isobus/isobus/can_NAME.hpp"
 #include "isobus/isobus/can_network_manager.hpp"
 #include "isobus/isobus/can_partnered_control_function.hpp"
@@ -65,8 +66,14 @@ bool apply_relay_state(int channel, bool new_state, bool bypass_interlock = fals
     }
     if (!io::relay_driver::set_relay(channel, new_state)) {
         ESP_LOGE(kTag, "relay %d set_relay failed", channel);
+        // DM1 (F17, docs/roadmap.md#phase-8--robustness--polish): the I2C
+        // write itself failing is the one relay-related condition this
+        // board can actually detect -- no per-channel feedback path to
+        // confirm contacts really moved either way (docs/hardware.md).
+        iso::diagnostics::set_relay_fault(true);
         return false;
     }
+    iso::diagnostics::set_relay_fault(false);  // cleared by the next successful write, any channel
     ESP_LOGI(kTag, "relay %d -> %s", channel, new_state ? "ON" : "OFF");
     g_vt_client->send_change_fill_attributes(
         object_pool_ids::relay_fill_attr_id(channel),

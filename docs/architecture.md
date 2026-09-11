@@ -15,7 +15,7 @@ bring-up starts.
 | Config storage | ESP-IDF **NVS** | Built-in, wear-leveled key/value flash storage; sufficient for channel names/icons/AUX-N mappings/automation rules. |
 | Ethernet (W5500) | Optional, non-ISOBUS | Only used for local web config UI, log export, and OTA — never for ISOBUS traffic. |
 | WiFi | Always-on SoftAP, `AgIsoBlock-XXXX` SSID | Guarantees an OTA/config path even with no Ethernet cable connected; never used for ISOBUS traffic. |
-| OTA mechanism | ESP-IDF `esp_https_ota` + dual OTA partitions | Standard ESP-IDF pattern: rollback-safe (new image must self-validate or the bootloader reverts to the previous slot). |
+| OTA mechanism | Direct `esp_ota_ops` (not `esp_https_ota` -- see [below](#wifi-ap--ota-planned), that's an HTTPS *client* for pulling a remote URL, the wrong fit for "upload a file from the browser") + dual OTA partitions | Rollback-safe: new image must self-validate (successfully claim its ISOBUS address) or the bootloader reverts to the previous slot. |
 
 ## Why not build on the Waveshare Arduino demo?
 
@@ -44,18 +44,26 @@ firmware/
 │   │   │                        Functions), VT client glue, and AUX-N input handling -- merged into one
 │   │   │                        module rather than the auxn_app.[hc]pp split originally planned here,
 │   │   │                        since both sides share the same VirtualTerminalClient event dispatcher
-│   │   └── diagnostics.cpp     — DM1 reporting (stretch goal)
+│   │   └── diagnostics.[hc]pp  — DM1 reporting -- implemented (Phase 8, F17): thin wrapper around
+│   │                             AgIsoStack++'s isobus::DiagnosticProtocol, covers VT-connection-lost
+│   │                             and relay-I2C-write-failure (the two conditions actually detectable
+│   │                             on this hardware today)
 │   ├── automation/
 │   │   ├── interlock.[hc]pp    — first (hardcoded) rule: DI{n} limit-switches channel {n} off
 │   │   └── rules_engine.[hc]pp — general input-to-output rule evaluation (not yet started;
 │   │                             interlock.cpp above is deliberately a fixed special case,
 │   │                             not built on top of a general schema, until one is needed)
 │   ├── config/
-│   │   └── nvs_store.[hc]pp    — channel names/icons/AUX-N map/rules persistence
-│   └── net/
-│       ├── wifi_ap.[hc]pp      — always-on SoftAP (AgIsoBlock-XXXX), STA join (optional)
-│       ├── ota_service.[hc]pp  — HTTPS/HTTP OTA update endpoint, image validation
-│       └── web_ui.[hc]pp       — (optional) local config/diagnostics web UI over WiFi AP/Ethernet
+│   │   └── nvs_store.[hc]pp    — channel names/icons/rules persistence (not yet started -- Phase 5/6;
+│   │                             the WiFi AP password below already has its own small, separate NVS use)
+│   └── net/                    — implemented (Phase 7), under slightly different names than first planned:
+│       ├── wifi_ap.[hc]pp      — always-on-by-default SoftAP (AgIsoBlock-XXXX), NVS-persisted random
+│       │                        password (editable from the VT panel, see vt-ui-design.md), no STA join
+│       └── web_server.[hc]pp   — local status/relay-control page (mirrors the VT) + OTA upload form,
+│                                 over WiFi AP or Ethernet once that's wired up -- one module rather
+│                                 than the separate ota_service.[hc]pp / web_ui.[hc]pp split originally
+│                                 planned here, since both are just routes on the same esp_http_server
+│                                 instance
 ├── components/                 — vendored/pinned AgIsoStack++ (as ESP-IDF component)
 └── CMakeLists.txt
 ```

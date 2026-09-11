@@ -22,6 +22,7 @@
 #include "io/input_driver.hpp"
 #include "io/relay_driver.hpp"
 #include "io/status_led.hpp"
+#include "isobus/diagnostics.hpp"
 #include "isobus/ecu_identity.hpp"
 #include "isobus/vt_app.hpp"
 #include "net/wifi_ap.hpp"
@@ -126,12 +127,14 @@ extern "C" void app_main(void) {
         ESP_LOGW(kTag, "esp_ota_mark_app_invalid_rollback_and_reboot: %s (continuing without rollback)", esp_err_to_name(err));
     }
 
+    iso::diagnostics::init(internal_ecu);
     iso::vt_app::init(internal_ecu);
     net::web_server::init();
 
     int tick = 0;
     bool last_vt_connected = false;
     bool last_vt_partner_claimed = false;
+    bool vt_ever_connected = false;  // see diagnostics::set_vt_connection_lost()'s doc comment
 
     // 20ms cadence so automation::interlock::update() debounces digital
     // inputs (and reacts to a limit switch) quickly -- 3 samples at 20ms
@@ -164,6 +167,13 @@ extern "C" void app_main(void) {
                 // our actual state (relay/DI/override-checkbox) and the
                 // build version back onto the screen.
                 iso::vt_app::resync_display();
+                vt_ever_connected = true;
+                iso::diagnostics::set_vt_connection_lost(false);
+            } else if (vt_ever_connected) {
+                // DM1 (F17): only a *loss* of connection is a fault --
+                // not yet having connected since boot is normal startup,
+                // not something to report.
+                iso::diagnostics::set_vt_connection_lost(true);
             }
             last_vt_connected = vt_connected;
         }

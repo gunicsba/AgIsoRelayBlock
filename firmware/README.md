@@ -340,6 +340,24 @@ Bench-verified on real hardware (board on COM12):
   clean boot (SoftAP up, address claimed, web server started, no crash).
   See
   [../docs/vt-ui-design.md](../docs/vt-ui-design.md#wifi-status--control-panel).
+- 2026-09-11: Phase 8's DM1 diagnostics (F17) -- see
+  [isobus/diagnostics.cpp](main/isobus/diagnostics.cpp), a thin wrapper
+  around AgIsoStack++'s already-complete `isobus::DiagnosticProtocol`
+  (driven via `CANHardwareInterface::get_periodic_update_event_dispatcher()`,
+  matching the library's own example, not a timer of our own). Covers the
+  two conditions actually detectable today: VT connection lost (after the
+  first successful connection each boot) and a relay I2C write failure
+  (hooked once, into `vt_app.cpp`'s `apply_relay_state()`, covering every
+  control path that writes a relay). SPNs are picked from J1939's
+  manufacturer-assignable reserved block, not SAE-registered -- documented
+  as placeholders, not real assigned values. CAN bus-off monitoring and
+  physical-relay-state feedback are explicitly still open (the latter is a
+  hardware gap, not a firmware one -- see
+  [../docs/hardware.md](../docs/hardware.md#why-this-board-fits-an-isobus-relay-block)).
+  Built, flashed to COM12, bench-confirmed clean boot; not yet confirmed
+  against a real DM1 decoder, since that needs deliberately breaking
+  something. See
+  [../docs/roadmap.md](../docs/roadmap.md#phase-8--robustness--polish).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
