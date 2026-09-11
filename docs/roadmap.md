@@ -169,6 +169,21 @@ review:
     time in future captures, to empirically confirm the retry loop is
     running (or catch it if it somehow isn't) instead of inferring it
     from sparse error/success log lines.
+  - Found a second, more likely root cause from the VT's own log directly:
+    `"Callback indicated there may be enough memory, but since there is
+    overhead associated to object storage it is impossible to be sure."`
+    Traced against our client's actual handling
+    (`isobus_virtual_terminal_client.cpp`): the Get Memory response is a
+    hard binary check on one byte -- `0` = proceed, anything else =
+    immediately fail the *entire* connection attempt
+    (`"Connection Failed Not Enough Memory"`), no partial credit for
+    "probably fine". If that VT-side uncertainty gets reported back as
+    non-zero, every single connection attempt would be rejected at this
+    exact step regardless of how many times our client retries -- which
+    would produce exactly "I have the VT running but the client doesn't
+    connect", as a first-connection rejection rather than a reconnect
+    problem. This is in `AgIsoVirtualTerminal`'s own memory-availability
+    callback, not this repo, so it isn't something to fix here.
 
 ## Phase 4 — AUX-N
 
@@ -303,6 +318,25 @@ that actually motivated this phase, rather than the fully generic
       needs something other than the fixed DI{n}->channel{n} pairing.
 - [ ] Persist rules to NVS (moot until the schema above exists --
       today's hardcoded pairing needs no persistence).
+
+**Bench-confirmed and fixed (2026-09-11):**
+- With the DI indicator boxes actually visible on a real VT, an unconnected
+  digital input was immediately obvious as a real problem, not just
+  theoretical: two channels showed disabled/flickering with nothing wired
+  to their inputs and nobody touching anything. The original assumption
+  ("the board's optocoupler input stage supplies its own bias; no internal
+  pull needed") was flagged as unverified from the start and turned out to
+  be wrong -- an unconnected input genuinely floats and reads noise.
+  Fixed by enabling the ESP32's internal pull-down on all 8 input pins, so
+  an unconnected input settles to a defined LOW ("inactive") instead of
+  floating -- confirmed on the bench: the previously-flickering channels
+  went silent immediately. This matters more than ordinary UI noise would,
+  since these inputs drive a safety interlock that force-disables an
+  output; an undefined floating state was a real gap, not a cosmetic one.
+- The Data Mask's "R{n}" label box was sized for the plain 2-character
+  text ("R1") but not the disabled marker ("R1!", 3 characters), which
+  didn't fit. Widened the label (and the column spacing to match) using
+  screen space that was otherwise going unused.
 
 ## Phase 7 — WiFi AP & OTA
 

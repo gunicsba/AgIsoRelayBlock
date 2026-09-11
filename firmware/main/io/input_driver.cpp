@@ -20,10 +20,17 @@ void init() {
     gpio_config_t cfg = {};
     cfg.pin_bit_mask = pin_mask;
     cfg.mode = GPIO_MODE_INPUT;
-    // The board's optocoupler input stage supplies its own bias; no
-    // internal pull needed (and none assumed here pending a bench check).
+    // Originally assumed the board's optocoupler input stage supplies its
+    // own bias, needing no internal pull -- bench-disproven: with nothing
+    // wired to an input, it floats and reads noise (observed as a channel
+    // randomly toggling "disabled" via the Phase 6 interlock with nobody
+    // touching anything). Since these inputs can drive a safety interlock
+    // that force-disables an output, an undefined floating state is a real
+    // problem, not just cosmetic -- pull down so an unconnected input
+    // settles to a defined LOW ("inactive"), matching the same
+    // safe-default philosophy as everything else here (N4).
     cfg.pull_up_en = GPIO_PULLUP_DISABLE;
-    cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
     cfg.intr_type = GPIO_INTR_DISABLE;
     gpio_config(&cfg);
 }

@@ -281,9 +281,13 @@ def build_pool():
     # state next to its channel is the point, not just bring-up/testing).
     RECT_SIZE = 60
     LABEL_HEIGHT = 36
+    # Wider than RECT_SIZE: "R1" fit in 60px, but "R1!" (the disabled
+    # marker -- see below) didn't. Columns spaced to match, using free
+    # screen space that was going unused rather than shrinking the font.
+    LABEL_WIDTH = 100
     DI_SIZE = 20
     COLUMNS = 4
-    COL_SPACING = RECT_SIZE + 10
+    COL_SPACING = LABEL_WIDTH + 10
     ROW_SPACING = RECT_SIZE + LABEL_HEIGHT + DI_SIZE + 24
     LEFT_MARGIN = 8
     TOP_MARGIN = 20
@@ -308,7 +312,7 @@ def build_pool():
         objects.append(make_output_rectangle(rect_id, RECT_SIZE, RECT_SIZE, fill_id))
         # Label stays below (not inside) the rectangle: black-on-black text
         # would vanish when the indicator fills solid for the ON state.
-        objects.append(make_output_string(label_id, RECT_SIZE, LABEL_HEIGHT,
+        objects.append(make_output_string(label_id, LABEL_WIDTH, LABEL_HEIGHT,
                                           "R{}".format(ch), font_id=ID_FONT_LARGE))
 
         # Digital input state indicator: small square, unfilled = inactive,

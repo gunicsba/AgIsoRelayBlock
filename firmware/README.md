@@ -189,6 +189,34 @@ Bench-verified on real hardware (board on COM12):
   connected/not-connected transitions visible over time in future
   captures instead of inferring the retry loop from sparse log lines. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-3--minimal-vt-presence).
+- 2026-09-11: found a second, more likely root cause for "the VT is
+  running but the client doesn't connect", directly from the VT's own log:
+  `"Callback indicated there may be enough memory, but... it is
+  impossible to be sure."` Our client's Get Memory handling
+  (`isobus_virtual_terminal_client.cpp`) is a hard binary check on one
+  response byte -- `0` = proceed, anything else immediately fails the
+  *whole* connection (`"Connection Failed Not Enough Memory"`). If that
+  VT-side uncertainty gets reported as non-zero, every connection attempt
+  would be rejected at this exact step regardless of retries -- a
+  first-connection rejection, not a reconnect problem. Lives in
+  `AgIsoVirtualTerminal`'s own memory-availability callback, not this
+  repo.
+- 2026-09-11: fixed two more real bugs found once the Phase 6 DI
+  indicators were actually visible on a real VT --
+  1. Two channels showed disabled/flickering with nothing wired to their
+     inputs and nobody touching anything: an unconnected input genuinely
+     floats and reads noise (the "no internal pull needed" comment in
+     [input_driver.cpp](main/io/input_driver.cpp) had been flagged
+     unverified from the start, and turned out to be wrong). Fixed by
+     enabling the ESP32's internal pull-down on all 8 input pins, so an
+     unconnected input settles to a defined LOW instead of floating --
+     confirmed on the bench: the flickering channels went silent
+     immediately. Matters more than ordinary UI noise, since these inputs
+     drive a safety interlock that force-disables an output.
+  2. The Data Mask's "R{n}" label box fit the plain 2-character text but
+     not the disabled marker ("R1!", 3 characters). Widened the label
+     (and column spacing to match) using screen space that was otherwise
+     unused.
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
