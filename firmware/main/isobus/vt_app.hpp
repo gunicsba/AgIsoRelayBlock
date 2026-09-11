@@ -17,4 +17,12 @@ namespace iso::vt_app {
 // claimed address are both available.
 void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu);
 
+// Called by automation::interlock whenever a channel's paired digital
+// input (already debounced) changes state. Forces the relay off if it
+// just became disabled (di_active transitioning to true), and reflects
+// both the DI indicator box and a "disabled" marker on the channel's own
+// label on the VT screen. channel is 1-8. No-op before the VT client has
+// connected (nothing to reflect yet).
+void set_interlock_state(int channel, bool di_active);
+
 }  // namespace iso::vt_app

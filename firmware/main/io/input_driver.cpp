@@ -35,4 +35,30 @@ bool read(uint8_t channel) {
     return gpio_get_level(kPins[channel - 1]) != 0;
 }
 
+namespace {
+bool g_debounced_state[8] = {};
+uint8_t g_match_count[8] = {};  // consecutive reads matching the raw level opposite g_debounced_state
+}  // namespace
+
+void update() {
+    for (int i = 0; i < 8; ++i) {
+        bool raw = gpio_get_level(kPins[i]) != 0;
+        if (raw == g_debounced_state[i]) {
+            g_match_count[i] = 0;  // still agrees with the current debounced state
+            continue;
+        }
+        if (++g_match_count[i] >= kDebounceSamples) {
+            g_debounced_state[i] = raw;
+            g_match_count[i] = 0;
+        }
+    }
+}
+
+bool read_debounced(uint8_t channel) {
+    if (channel < 1 || channel > 8) {
+        return false;
+    }
+    return g_debounced_state[channel - 1];
+}
+
 }  // namespace io::input_driver

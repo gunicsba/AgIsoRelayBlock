@@ -15,6 +15,8 @@ constexpr uint16_t kSoftKeyMask2 = 1201;
 // channel: 1-8
 inline uint16_t relay_rect_id(int channel) { return 1110 + channel; }
 inline uint16_t relay_fill_attr_id(int channel) { return 1920 + channel; }
+inline uint16_t relay_label_id(int channel) { return 1120 + channel; }
+inline uint16_t di_fill_attr_id(int channel) { return 1930 + channel; }
 
 // key_number: 1-8 = relay channels (toggle), 9 = buzzer, 10 = next page
 inline uint16_t softkey_id(int key_number) { return 1210 + key_number; }

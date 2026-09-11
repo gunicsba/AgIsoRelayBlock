@@ -6,6 +6,7 @@
 // Phase 3 (docs/roadmap.md#phase-3--minimal-vt-presence) uploads the VT
 // object pool and wires SK1-SK9 to the relays/buzzer.
 
+#include "automation/interlock.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -43,6 +44,7 @@ extern "C" void app_main(void) {
 
     bool relay_ok = io::relay_driver::init();
     io::input_driver::init();
+    automation::interlock::init();
     io::buzzer_driver::init();
     bool can_ok = io::can_selftest::run();
 
@@ -71,29 +73,31 @@ extern "C" void app_main(void) {
     }
     iso::vt_app::init(internal_ecu);
 
-    bool last_input1 = false;
     int tick = 0;
 
+    // 20ms cadence so automation::interlock::update() debounces digital
+    // inputs (and reacts to a limit switch) quickly -- 3 samples at 20ms
+    // is a 60ms settle time, not the 600ms it'd be at the old 200ms tick.
+    // Everything else here (the LED heartbeat) is throttled to its own
+    // slower rate via the tick counter instead of slowing the whole loop.
     while (true) {
-        // Heartbeat: green while the relay expander is working and we hold
-        // a valid ISOBUS address, red otherwise (checked live every tick,
-        // since address claims can in principle be lost/re-won later), dim
-        // on odd ticks so it's visibly blinking rather than solid.
-        uint8_t level = (tick % 2 == 0) ? 40 : 4;
-        bool bus_ok = internal_ecu && internal_ecu->get_address_valid();
-        if (relay_ok && bus_ok) {
-            io::status_led::set_rgb(0, level, 0);
-        } else {
-            io::status_led::set_rgb(level, 0, 0);
-        }
+        automation::interlock::update();
 
-        bool input1 = io::input_driver::read(1);
-        if (input1 != last_input1) {
-            ESP_LOGI(kTag, "input 1 -> %s", input1 ? "HIGH" : "LOW");
-            last_input1 = input1;
+        if (tick % 10 == 0) {  // ~200ms, matching the original heartbeat rate
+            // Heartbeat: green while the relay expander is working and we
+            // hold a valid ISOBUS address, red otherwise (checked live,
+            // since address claims can in principle be lost/re-won later),
+            // dim every other blink so it's visibly blinking rather than solid.
+            uint8_t level = ((tick / 10) % 2 == 0) ? 40 : 4;
+            bool bus_ok = internal_ecu && internal_ecu->get_address_valid();
+            if (relay_ok && bus_ok) {
+                io::status_led::set_rgb(0, level, 0);
+            } else {
+                io::status_led::set_rgb(level, 0, 0);
+            }
         }
 
         ++tick;
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

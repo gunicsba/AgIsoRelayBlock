@@ -7,17 +7,21 @@ planned module layout this will grow into.
 ## Current status
 
 Phase 1 bring-up harness (`main/app_main.cpp` + `main/io/`), Phase 2 bus
-presence (`main/isobus/ecu_identity.cpp`), Phase 3 minimal VT presence, and
-Phase 4 AUX-N (both in `main/isobus/vt_app.cpp` + `main/isobus/object_pool.iop`):
-blinks the WS2812 status LED, toggles relay channel 1 through the
-TCA9554PWR I2C expander, reads digital input 1, runs a CAN/TWAI self-test
-loopback, hands the TWAI peripheral to AgIsoStack++ to claim an ISO
-11783-5 NAME/address, then uploads a VT object pool (8-in-a-row relay
-indicators + a 9-key Soft Key Mask + 17 Auxiliary Function Type 2 objects)
-and wires SK1-SK8/AUX-N to the relays and SK9/the buzzer AUX-N function to
-the buzzer. Every relay channel exposes both a latching and a momentary
-AUX-N function -- see [../docs/vt-ui-design.md](../docs/vt-ui-design.md#aux-n-functions-17-total)
-for why.
+presence (`main/isobus/ecu_identity.cpp`), Phase 3 minimal VT presence,
+Phase 4 AUX-N (`main/isobus/vt_app.cpp` + `main/isobus/object_pool.iop`),
+and Phase 6's first automation rule (`main/automation/interlock.cpp`) --
+Phase 5 (naming/icons/persistence) deliberately skipped for now, see the
+roadmap. Blinks the WS2812 status LED, toggles relay channel 1 through the
+TCA9554PWR I2C expander, debounces all 8 digital inputs, runs a CAN/TWAI
+self-test loopback, hands the TWAI peripheral to AgIsoStack++ to claim an
+ISO 11783-5 NAME/address, then uploads a VT object pool (an 8-channel
+relay indicator grid with a DI state box under each one, two Soft Key Mask
+pages, and 17 Auxiliary Function Type 2 objects) and wires it all up: SKM
+page 1 (toggle) + page 2 (momentary override) + 17 AUX-N functions all
+drive the same relays, and digital input DI{n} acts as a fixed
+limit-switch interlock forcing channel {n} off. See
+[../docs/vt-ui-design.md](../docs/vt-ui-design.md) for the full UI design
+and why behind each of these.
 
 Bench-verified on real hardware (board on COM12):
 - 2026-09-10: `relay_expander=OK`, `can_selftest=PASS`. Getting there
@@ -149,6 +153,29 @@ Bench-verified on real hardware (board on COM12):
   underline convention correctly distinguishing the toggle variant from
   the plain momentary one --
   ![AUX-N assignment list showing R7/R8 underlined (toggle) and R1/R2 plain (momentary), "17 function(s), 20 input(s) available"](../images/aux%20assignment.png).
+- 2026-09-11: added Phase 6's first automation rule -- digital input DI{n}
+  as a fixed limit-switch interlock for relay channel {n} (see
+  [interlock.cpp](main/automation/interlock.cpp)). Skipped straight past
+  the general `{input, trigger, output, action}` rule schema originally
+  planned for this phase, since the concrete use case that motivated it
+  (an end-of-travel switch disabling the channel that's driving toward
+  it) doesn't need one yet.
+
+  Closed out two things left open since Phase 3: added debounce to
+  [input_driver.cpp](main/io/input_driver.cpp) (3 consecutive matching
+  samples), and the main loop now runs at 20ms instead of 200ms so that
+  settles in ~60ms rather than ~600ms (the LED heartbeat is throttled back
+  to its original ~200ms blink rate independently, via the tick counter,
+  so it doesn't speed up). Also added a small DI state indicator box under
+  each channel on the Data Mask, and the channel's own "R{n}" label gets a
+  "!" suffix while disabled -- both via the object pool's existing
+  fill-attribute/string-value mechanisms, no new fonts or bitmap graphics
+  needed. The interlock is enforced in exactly one place,
+  `vt_app.cpp`'s `apply_relay_state` (refuses ON requests while the
+  channel's DI is active), so it automatically protects every control
+  path -- SKM, AUX-N toggle, AUX-N momentary -- without touching each one
+  separately. See
+  [../docs/vt-ui-design.md](../docs/vt-ui-design.md#digital-input-indicators--limit-switch-interlock).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "automation/interlock.hpp"
 #include "esp_log.h"
 #include "io/buzzer_driver.hpp"
 #include "io/relay_driver.hpp"
@@ -31,9 +32,17 @@ std::shared_ptr<isobus::VirtualTerminalClient> g_vt_client;
 // docs/vt-ui-design.md's precedence rule: last action wins, no input path
 // is more authoritative than another). Every path that changes a relay --
 // SKM press or AUX-N function -- funnels through here so the VT's Data
-// Mask indicator always reflects reality. Returns false (and leaves the
-// relay untouched) if the I2C write itself failed.
+// Mask indicator always reflects reality, and so the Phase 6 limit-switch
+// interlock only needs to be enforced in this one place: an ON request is
+// refused while the channel's paired DI is active (see automation/interlock.hpp),
+// regardless of which control path asked for it. Turning OFF is never
+// blocked. Returns false (and leaves the relay untouched) if refused by
+// the interlock or if the I2C write itself failed.
 bool apply_relay_state(int channel, bool new_state) {
+    if (new_state && automation::interlock::is_disabled(channel)) {
+        ESP_LOGW(kTag, "relay %d: ON request refused, disabled by its DI limit switch", channel);
+        return false;
+    }
     if (!io::relay_driver::set_relay(channel, new_state)) {
         ESP_LOGE(kTag, "relay %d set_relay failed", channel);
         return false;
@@ -176,6 +185,31 @@ void handle_aux_function_event(const isobus::VirtualTerminalClient::AuxiliaryFun
     }
 }
 }  // namespace
+
+void set_interlock_state(int channel, bool di_active) {
+    if (!g_vt_client) {
+        return;  // VT client not started yet, nothing to reflect
+    }
+
+    // Force the relay off the moment its paired DI activates. apply_relay_state
+    // itself now refuses ON requests while disabled, so this only ever
+    // needs to push a channel *off*, never on.
+    if (di_active && io::relay_driver::get_relay(channel)) {
+        apply_relay_state(channel, false);
+    }
+
+    g_vt_client->send_change_fill_attributes(
+        object_pool_ids::di_fill_attr_id(channel),
+        di_active ? isobus::VirtualTerminalClient::FillType::FillWithSpecifiedColourInFillColourAttribute
+                   : isobus::VirtualTerminalClient::FillType::NoFill,
+        kColourBlack, isobus::NULL_OBJECT_ID);
+
+    // "!" marks the channel as disabled directly on its own Data Mask
+    // label, so it's obvious at a glance why a channel won't respond,
+    // without needing to look at the (smaller, further away) DI indicator.
+    std::string label = "R" + std::to_string(channel) + (di_active ? "!" : "");
+    g_vt_client->send_change_string_value(object_pool_ids::relay_label_id(channel), label);
+}
 
 void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
     if (!internal_ecu) {

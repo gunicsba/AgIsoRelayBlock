@@ -89,11 +89,12 @@ moving to the next. Nothing below is implemented yet.
 - [x] Wire buzzer driver so SK9 fires a momentary buzzer pulse — see
       [buzzer_driver.cpp](../firmware/main/io/buzzer_driver.cpp) (GPIO46,
       one-shot `esp_timer`, non-blocking).
-- [ ] Wire digital input GPIOs (raw read + debounce), display raw input
-      state on the same mask for bring-up/testing purposes. Raw read
-      already exists from Phase 1 ([input_driver.cpp](../firmware/main/io/input_driver.cpp));
-      debounce and showing input state on the VT mask itself are still
-      outstanding.
+- [x] Wire digital input GPIOs (raw read + debounce), display raw input
+      state on the same mask for bring-up/testing purposes. Ended up
+      landing as part of Phase 6 rather than here, once there was an
+      actual consumer (the limit-switch interlock) for debounced input
+      state instead of just a bring-up placeholder -- see
+      [Phase 6](#phase-6--automation-rules).
 - [ ] Bench-test actual soft key count on target VT hardware/simulator
       and resolve the "9 keys may not fit on one SKM" open question.
 
@@ -244,11 +245,46 @@ review:
 
 ## Phase 6 — Automation rules
 
-- [ ] Design rule schema: `{input, trigger, output, action}` (see
-      [architecture.md](architecture.md#configuration--persistence-model-planned)).
-- [ ] VT UI to create/edit/delete rules (no laptop/app).
-- [ ] Rule engine evaluation loop, with manual override always winning.
-- [ ] Persist rules to NVS.
+Phase 5 (naming/icons/persistence) deliberately skipped for now -- it
+needs real bitmap artwork (Picture Graphics), which both takes design
+effort and grows the object pool / upload time, and isn't needed to prove
+out the automation rule concept. Started here with the concrete use case
+that actually motivated this phase, rather than the fully generic
+`{input, trigger, output, action}` schema up front.
+
+- [x] First rule, hardcoded (not yet VT-configurable): DI{n} acts as a
+      limit-switch style safety interlock for relay channel {n} (fixed
+      1:1 pairing). While DI{n} is active, channel {n} is forced off
+      immediately and refuses to be turned back on by *any* control path
+      (SKM, AUX-N toggle, AUX-N momentary) until DI{n} goes inactive --
+      and even then it stays off, since a limit switch releasing
+      shouldn't by itself resume motion (matches requirement N4's
+      safe-default philosophy). See
+      [automation/interlock.cpp](../firmware/main/automation/interlock.cpp).
+      "Manual override always wins" doesn't apply the usual way here:
+      this interlock is the one thing in the system that's allowed to be
+      *more* authoritative than manual control, since it represents a
+      physical limit, not a competing preference.
+- [x] Digital input debounce (closes out the Phase 3 item that had been
+      left open) -- see [input_driver.cpp](../firmware/main/io/input_driver.cpp):
+      3 consecutive matching samples before a level is accepted, sampled
+      every ~20ms (60ms settle time) from the main loop, which now also
+      runs at 20ms instead of 200ms for this reason (the LED heartbeat is
+      throttled back to its original ~200ms rate independently, so it
+      doesn't blink faster).
+- [x] Shown on the VT (closes out the other open Phase 3 item -- "display
+      raw input state on the same mask for bring-up/testing purposes",
+      now genuinely useful rather than just for bring-up): a small
+      indicator box under each channel shows its paired DI's raw
+      (debounced) state, and the channel's own "R{n}" label gets a `!`
+      suffix while disabled, so it's obvious at a glance *why* a channel
+      won't respond. See
+      [vt-ui-design.md](vt-ui-design.md#digital-input-indicators--limit-switch-interlock).
+- [ ] Generalize to a real rule schema (`{input, trigger, output,
+      action}`) and VT UI to create/edit/delete rules, if/when a use case
+      needs something other than the fixed DI{n}->channel{n} pairing.
+- [ ] Persist rules to NVS (moot until the schema above exists --
+      today's hardcoded pairing needs no persistence).
 
 ## Phase 7 — WiFi AP & OTA
 

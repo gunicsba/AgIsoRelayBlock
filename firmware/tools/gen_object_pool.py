@@ -80,6 +80,14 @@ def relay_fill_attr_id(channel):
     return 1920 + channel
 
 
+def di_rect_id(channel):  # channel: 1-8 -- digital input state indicator
+    return 1130 + channel
+
+
+def di_fill_attr_id(channel):
+    return 1930 + channel
+
+
 def aux_latch_function_id(channel):  # channel: 1-8
     return 1500 + channel
 
@@ -267,12 +275,16 @@ def build_pool():
 
     # --- Data Mask contents: title + relay indicators, 4-per-row x 2 rows
     # (60x60 boxes with a 32x32 label under each -- both bumped up from an
-    # earlier 32x32/8x8 pass that turned out to be barely readable).
+    # earlier 32x32/8x8 pass that turned out to be barely readable), plus a
+    # small digital-input indicator box under each one (Phase 6: DI{n} acts
+    # as a limit-switch interlock for channel {n}, so seeing the raw input
+    # state next to its channel is the point, not just bring-up/testing).
     RECT_SIZE = 60
     LABEL_HEIGHT = 36
+    DI_SIZE = 20
     COLUMNS = 4
     COL_SPACING = RECT_SIZE + 10
-    ROW_SPACING = RECT_SIZE + LABEL_HEIGHT + 14
+    ROW_SPACING = RECT_SIZE + LABEL_HEIGHT + DI_SIZE + 24
     LEFT_MARGIN = 8
     TOP_MARGIN = 20
 
@@ -285,6 +297,7 @@ def build_pool():
         x = LEFT_MARGIN + col * COL_SPACING
         rect_y = TOP_MARGIN + row * ROW_SPACING
         label_y = rect_y + RECT_SIZE + 4
+        di_y = label_y + LABEL_HEIGHT + 6
 
         fill_id = relay_fill_attr_id(ch)
         rect_id = relay_rect_id(ch)
@@ -298,8 +311,17 @@ def build_pool():
         objects.append(make_output_string(label_id, RECT_SIZE, LABEL_HEIGHT,
                                           "R{}".format(ch), font_id=ID_FONT_LARGE))
 
+        # Digital input state indicator: small square, unfilled = inactive,
+        # filled = active. No label needed -- position under the matching
+        # channel already says what it is.
+        di_fill_id = di_fill_attr_id(ch)
+        di_id = di_rect_id(ch)
+        objects.append(make_fill_attributes(di_fill_id, fill_type=0, colour=COLOUR_BLACK))
+        objects.append(make_output_rectangle(di_id, DI_SIZE, DI_SIZE, di_fill_id))
+
         data_mask_children.append((rect_id, x, rect_y))
         data_mask_children.append((label_id, x, label_y))
+        data_mask_children.append((di_id, x, di_y))
 
     # --- Soft Key Mask page 1 (default/initial): SK1-SK8 (relay toggles) +
     # SK9 (buzzer) + SK10 (next page). Emitted *before* the Data Mask that
@@ -419,6 +441,8 @@ def generate_ids_header():
         "// channel: 1-8",
         "inline uint16_t relay_rect_id(int channel) {{ return {} + channel; }}".format(1110),
         "inline uint16_t relay_fill_attr_id(int channel) {{ return {} + channel; }}".format(1920),
+        "inline uint16_t relay_label_id(int channel) {{ return {} + channel; }}".format(1120),
+        "inline uint16_t di_fill_attr_id(int channel) {{ return {} + channel; }}".format(1930),
         "",
         "// key_number: 1-8 = relay channels (toggle), 9 = buzzer, 10 = next page",
         "inline uint16_t softkey_id(int key_number) {{ return {} + key_number; }}".format(1210),

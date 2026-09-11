@@ -46,7 +46,10 @@ firmware/
 │   │   │                        since both sides share the same VirtualTerminalClient event dispatcher
 │   │   └── diagnostics.cpp     — DM1 reporting (stretch goal)
 │   ├── automation/
-│   │   └── rules_engine.[hc]pp — input-to-output rule evaluation
+│   │   ├── interlock.[hc]pp    — first (hardcoded) rule: DI{n} limit-switches channel {n} off
+│   │   └── rules_engine.[hc]pp — general input-to-output rule evaluation (not yet started;
+│   │                             interlock.cpp above is deliberately a fixed special case,
+│   │                             not built on top of a general schema, until one is needed)
 │   ├── config/
 │   │   └── nvs_store.[hc]pp    — channel names/icons/AUX-N map/rules persistence
 │   └── net/

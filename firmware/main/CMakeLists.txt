@@ -10,6 +10,7 @@ idf_component_register(
         "io/buzzer_driver.cpp"
         "isobus/ecu_identity.cpp"
         "isobus/vt_app.cpp"
+        "automation/interlock.cpp"
     INCLUDE_DIRS "."
     REQUIRES AgIsoStack-plus-plus
     PRIV_REQUIRES esp_hw_support esp_timer

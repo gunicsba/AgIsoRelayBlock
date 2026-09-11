@@ -54,6 +54,38 @@ reflowed into a grid. Each widget:
   the real toggle path for non-touch VTs is the SKM/AUX-N below, so this
   is an enhancement, not a dependency.
 
+## Digital input indicators & limit-switch interlock
+
+Phase 6's first automation rule (see
+[roadmap.md](roadmap.md#phase-6--automation-rules)): digital input DI{n}
+is a fixed, hardcoded limit-switch interlock for relay channel {n}. Two
+small additions to each channel's widget in the relay indicator grid make
+this visible and testable from the VT, without any new fonts, strings, or
+bitmap graphics:
+
+- A small (20×20) **Output Rectangle** under the "R{n}" label, unfilled =
+  DI inactive, filled = DI active — the same fill-by-state convention as
+  the main 60×60 relay indicator, just smaller and with no label of its
+  own (its position, directly below the matching channel, already says
+  what it is). Cheap: a rectangle + a dedicated `FillAttributes` object
+  per channel, ~336 bytes total for all 8 — deliberately avoided anything
+  graphics-based here, both for the effort and because the whole point of
+  postponing Phase 5 was not growing the pool with bitmap data yet.
+- The channel's own "R{n}" label gets a **`!` suffix** while its DI is
+  active (`"R1!"` instead of `"R1"`, via `send_change_string_value` — no
+  new objects needed, just a runtime value change on the string that's
+  already there), so it's obvious at a glance *why* a channel won't
+  respond, without having to notice the smaller DI box.
+
+While DI{n} is active: channel {n} is forced off immediately (if it was
+on) and refuses to be turned back on by any control path (SKM, AUX-N
+toggle, AUX-N momentary) — enforced in one place,
+`vt_app.cpp`'s `apply_relay_state`, so every control path is protected
+without having to duplicate the check. When DI{n} goes inactive again,
+the channel stays off; the operator has to explicitly command it on
+again, matching this project's "safe defaults" requirement (N4) — a limit
+switch releasing shouldn't by itself resume motion.
+
 ## Soft Key Masks: two pages, reached via a next/back key
 
 Two Soft Key Mask objects, switched at runtime with the VT's "Change Soft
