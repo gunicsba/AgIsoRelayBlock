@@ -11,8 +11,21 @@ constexpr uint16_t kWorkingSet = 1000;
 constexpr uint16_t kDataMask = 1100;
 constexpr uint16_t kSoftKeyMask = 1200;
 constexpr uint16_t kSoftKeyMask2 = 1201;
+constexpr uint16_t kSoftKeyMask3 = 1202;
 constexpr uint16_t kTitleString = 1101;
 constexpr uint16_t kTitleStringMaxChars = 44;
+
+constexpr uint16_t kSoftkeyNext3 = 1266;
+constexpr uint16_t kSoftkeyBack3 = 1267;
+
+// WiFi status/control panel (page 3) -- see net/wifi_ap.hpp.
+constexpr uint16_t kSoftkeyWifiToggle = 1264;
+constexpr uint16_t kWifiEnabledFillAttr = 1941;
+constexpr uint16_t kWifiSsidLabel = 1144;
+constexpr uint16_t kWifiPasswordInput = 1145;
+constexpr uint16_t kWifiIpLabel = 1146;
+constexpr uint16_t kWifiClientsLabel = 1147;
+constexpr uint16_t kWifiPasswordMaxChars = 32;
 
 // channel: 1-8
 inline uint16_t relay_rect_id(int channel) { return 1110 + channel; }

@@ -324,6 +324,22 @@ Bench-verified on real hardware (board on COM12):
   rollback. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-7--wifi-ap--ota) and
   [../docs/architecture.md](../docs/architecture.md#wifi-ap--ota-planned).
+- 2026-09-11: added a WiFi status/control panel to the VT itself (SSID,
+  password, IP, live connected-client count, an AP-enable checkbox, and
+  an editable Input String for the password -- see
+  [net/wifi_ap.hpp](main/net/wifi_ap.hpp)'s new accessors and
+  `vt_app.cpp`'s `handle_change_string_value_event`). Needed a third SKM
+  page since both existing pages were already full at the 10-key ceiling;
+  moved the "Momentary Override Safety" toggle from page 2's SK10 to the
+  new page 3 to make room, which also groups it with another device-wide
+  setting rather than the per-channel momentary keys. Kept the random,
+  NVS-persisted first-boot password (no fixed default like `12345678` --
+  this panel is what makes "read or change it from the cab" possible
+  without trading that away). Regenerated and structurally validated the
+  object pool before flashing; built, flashed to COM12, bench-confirmed
+  clean boot (SoftAP up, address claimed, web server started, no crash).
+  See
+  [../docs/vt-ui-design.md](../docs/vt-ui-design.md#wifi-status--control-panel).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

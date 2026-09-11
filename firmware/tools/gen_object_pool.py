@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Generates the ISO 11783-6 VT object pool binary (.iop) for the main
 screen, per docs/vt-ui-design.md: a Data Mask with an 8-in-a-row relay
-state indicator strip, two Soft Key Mask pages reached via a next/back key
-pair (page 1: SK1-SK8 relay toggles + SK9 buzzer + SK10 next-page; page 2:
-SK1-SK8 momentary override + a back key), and 17 Auxiliary Function Type 2
-objects (a toggle + a momentary-override variant per relay channel, plus
-one momentary buzzer function) for AUX-N joystick/armrest assignment.
+state indicator strip, a "Momentary Override Safety" checkbox, a WiFi
+status/control panel, three Soft Key Mask pages chained via next/back keys
+(page 1: SK1-SK8 relay toggles + SK9 buzzer + SK10 next-page; page 2:
+SK1-SK8 momentary override + SK9 back + SK10 next-page; page 3: SK1 WiFi
+AP toggle + SK2 override-safety toggle + SK9 back), and 17 Auxiliary
+Function Type 2 objects (a toggle + a momentary-override variant per relay
+channel, plus one momentary buzzer function) for AUX-N joystick/armrest
+assignment.
 
 Auxiliary Function Type 2, not Type 1: AgIsoStack++'s own parser
 (isobus_virtual_terminal_working_set_base.cpp) logs that Type 1 objects
@@ -37,6 +40,7 @@ T_DATA_MASK = 1
 T_SOFT_KEY_MASK = 4
 T_KEY = 5
 T_OUTPUT_STRING = 11
+T_INPUT_STRING = 8
 T_OUTPUT_RECTANGLE = 14
 T_FONT_ATTRIBUTES = 23
 T_LINE_ATTRIBUTES = 24
@@ -63,7 +67,31 @@ ID_TITLE_STRING = 1101
 # text (firmware overwrites it at connect time with a build version suffix).
 TITLE_MAX_CHARS = 44
 ID_SOFT_KEY_MASK = 1200  # page 1: SK1-SK8 toggle, SK9 buzzer, SK10 next-page
-ID_SOFT_KEY_MASK_2 = 1201  # page 2: SK1-SK8 momentary override, SK9 back
+ID_SOFT_KEY_MASK_2 = 1201  # page 2: SK1-SK8 momentary override, SK9 back, SK10 next-page
+ID_SOFT_KEY_MASK_3 = 1202  # page 3: WiFi status/control panel, SK9 back
+
+# WiFi status/control panel (Data Mask, visible on every SKM page, same as
+# the override checkbox above it): mirrors net::wifi_ap.hpp. See
+# docs/vt-ui-design.md#wifi-status--control-panel.
+ID_WIFI_ENABLED_RECT = 1142
+ID_WIFI_ENABLED_LABEL = 1143
+ID_WIFI_SSID_LABEL = 1144
+ID_WIFI_PASSWORD_INPUT = 1145
+ID_WIFI_IP_LABEL = 1146
+ID_WIFI_CLIENTS_LABEL = 1147
+ID_WIFI_ENABLED_FILL = 1941
+# Reserved character count for ID_WIFI_PASSWORD_INPUT -- WPA2-PSK allows up
+# to 63 ASCII characters; 32 comfortably covers both the 12-character
+# generated default and any realistic operator-chosen password without
+# reserving the full 63 (see TITLE_MAX_CHARS's comment for the same
+# reserved-wider-than-default-content reasoning).
+WIFI_PASSWORD_MAX_CHARS = 32
+
+ID_SOFTKEY_WIFI_TOGGLE = 1264
+ID_SOFTKEY_WIFI_TOGGLE_LABEL = 1265
+ID_SOFTKEY_NEXT_3 = 1266  # page 2 -> page 3
+ID_SOFTKEY_BACK_3 = 1267  # page 3 -> page 2
+
 ID_FONT = 1900
 ID_FONT_LARGE = 1901  # 32x32 -- Data Mask indicators + soft key labels
 ID_FONT_LARGE_UNDERLINE = 1902  # same, underlined -- marks the AUX-N toggle variant
@@ -212,6 +240,35 @@ def make_output_string(object_id, width, height, text, font_id=ID_FONT):
         + macro_list()
     )
     return object_header(object_id, T_OUTPUT_STRING) + body
+
+
+def make_input_string(object_id, width, height, length, initial_value, font_id=ID_FONT, enabled=1):
+    # Unlike Output String, `length` is a fixed reserved size, not just the
+    # current text's length -- the operator can type up to that many
+    # characters. `initial_value` must already be exactly `length` bytes
+    # (space-padded), same convention as the title string.
+    background_colour = COLOUR_WHITE
+    input_attributes = NULL_OBJECT_ID  # no character-set restriction
+    options = 0
+    variable_reference = NULL_OBJECT_ID  # use the static Value field below
+    justification = 0  # left/top justified
+    value_bytes = initial_value.encode("ascii")
+    assert len(value_bytes) == length, "initial_value must be pre-padded to exactly `length` bytes"
+    body = (
+        u16(width)
+        + u16(height)
+        + bytes([background_colour])
+        + u16(font_id)
+        + u16(input_attributes)
+        + bytes([options])
+        + u16(variable_reference)
+        + bytes([justification])
+        + bytes([length])
+        + value_bytes
+        + bytes([enabled])
+        + macro_list()
+    )
+    return object_header(object_id, T_INPUT_STRING) + body
 
 
 def make_output_rectangle(object_id, width, height, fill_attr_id):
@@ -371,6 +428,33 @@ def build_pool():
     data_mask_children.append((ID_OVERRIDE_CHECKBOX_RECT, LEFT_MARGIN, override_y))
     data_mask_children.append((ID_OVERRIDE_CHECKBOX_LABEL, LEFT_MARGIN + CHECKBOX_SIZE + 8, override_y + 6))
 
+    # --- WiFi status/control panel, below the override checkbox. Reached
+    # via SKM page 3 (SK1 there toggles the AP on/off), but the display
+    # itself -- like the override checkbox above -- lives on the Data Mask
+    # so it's visible regardless of which SKM page is active, not just
+    # while on page 3. Values (SSID/IP/client count) are placeholders here,
+    # sent for real via send_change_string_value once net::wifi_ap is up
+    # (the pool is generated before that's known); the password Input
+    # String's placeholder is never actually shown -- it's overwritten with
+    # the real generated/persisted password the same way. See
+    # docs/vt-ui-design.md#wifi-status--control-panel.
+    wifi_y = override_y + 40
+    LINE_HEIGHT = 18
+    objects.append(make_fill_attributes(ID_WIFI_ENABLED_FILL, fill_type=0, colour=COLOUR_BLACK))
+    objects.append(make_output_rectangle(ID_WIFI_ENABLED_RECT, CHECKBOX_SIZE, CHECKBOX_SIZE, ID_WIFI_ENABLED_FILL))
+    objects.append(make_output_string(ID_WIFI_ENABLED_LABEL, 200, 12, "WiFi AP Enabled", font_id=ID_FONT))
+    objects.append(make_output_string(ID_WIFI_SSID_LABEL, 256, 12, "SSID: ".ljust(32), font_id=ID_FONT))
+    objects.append(make_input_string(ID_WIFI_PASSWORD_INPUT, 256, 12, WIFI_PASSWORD_MAX_CHARS,
+                                      "Password: ".ljust(WIFI_PASSWORD_MAX_CHARS), font_id=ID_FONT))
+    objects.append(make_output_string(ID_WIFI_IP_LABEL, 192, 12, "IP: ".ljust(24), font_id=ID_FONT))
+    objects.append(make_output_string(ID_WIFI_CLIENTS_LABEL, 128, 12, "Clients: ".ljust(16), font_id=ID_FONT))
+    data_mask_children.append((ID_WIFI_ENABLED_RECT, LEFT_MARGIN, wifi_y))
+    data_mask_children.append((ID_WIFI_ENABLED_LABEL, LEFT_MARGIN + CHECKBOX_SIZE + 8, wifi_y + 6))
+    data_mask_children.append((ID_WIFI_SSID_LABEL, LEFT_MARGIN, wifi_y + CHECKBOX_SIZE + LINE_HEIGHT * 0))
+    data_mask_children.append((ID_WIFI_PASSWORD_INPUT, LEFT_MARGIN, wifi_y + CHECKBOX_SIZE + LINE_HEIGHT * 1))
+    data_mask_children.append((ID_WIFI_IP_LABEL, LEFT_MARGIN, wifi_y + CHECKBOX_SIZE + LINE_HEIGHT * 2))
+    data_mask_children.append((ID_WIFI_CLIENTS_LABEL, LEFT_MARGIN, wifi_y + CHECKBOX_SIZE + LINE_HEIGHT * 3))
+
     # --- Soft Key Mask page 1 (default/initial): SK1-SK8 (relay toggles) +
     # SK9 (buzzer) + SK10 (next page). Emitted *before* the Data Mask that
     # references it, and Key objects before the mask that references them:
@@ -415,14 +499,32 @@ def build_pool():
     objects.append(make_key(ID_SOFTKEY_BACK, key_code=9, children=[(ID_SOFTKEY_BACK_LABEL, 2, 2)]))
     page2_key_ids.append(ID_SOFTKEY_BACK)
 
-    # Toggles the "Momentary Override Safety" checkbox above (terse "OR"
-    # label -- the full name is spelled out next to the checkbox on the
-    # Data Mask itself, same convention as ">>"/"<<"/"BZ" elsewhere).
-    objects.append(make_output_string(ID_SOFTKEY_OVERRIDE_LABEL, RECT_SIZE, LABEL_HEIGHT, "OR", font_id=ID_FONT_LARGE))
-    objects.append(make_key(ID_SOFTKEY_OVERRIDE, key_code=10, children=[(ID_SOFTKEY_OVERRIDE_LABEL, 2, 2)]))
-    page2_key_ids.append(ID_SOFTKEY_OVERRIDE)
+    # SK10 here reuses page 1's own ">>" label object (identical meaning:
+    # go further) rather than defining a duplicate -- an object may be the
+    # child of more than one parent, same trick already used for the title
+    # string and the page-2 momentary keys' "R{n}" labels.
+    objects.append(make_key(ID_SOFTKEY_NEXT_3, key_code=10, children=[(softkey_label_id(10), 2, 2)]))
+    page2_key_ids.append(ID_SOFTKEY_NEXT_3)
 
     objects.append(make_soft_key_mask(page2_key_ids, mask_id=ID_SOFT_KEY_MASK_2))
+
+    # --- Soft Key Mask page 3: WiFi status/control panel (see the Data
+    # Mask objects above) -- SK1 toggles the "WiFi AP Enabled" checkbox,
+    # SK2 toggles "Momentary Override Safety" (moved here from page 2's
+    # SK10 -- a device-wide setting fits more naturally alongside other
+    # device-wide settings than next to per-channel momentary keys), SK9
+    # goes back to page 2 (reuses page 2's own "<<" label object, same
+    # reuse trick as above).
+    objects.append(make_output_string(ID_SOFTKEY_WIFI_TOGGLE_LABEL, RECT_SIZE, LABEL_HEIGHT, "AP", font_id=ID_FONT_LARGE))
+    objects.append(make_key(ID_SOFTKEY_WIFI_TOGGLE, key_code=1, children=[(ID_SOFTKEY_WIFI_TOGGLE_LABEL, 2, 2)]))
+
+    objects.append(make_output_string(ID_SOFTKEY_OVERRIDE_LABEL, RECT_SIZE, LABEL_HEIGHT, "OR", font_id=ID_FONT_LARGE))
+    objects.append(make_key(ID_SOFTKEY_OVERRIDE, key_code=2, children=[(ID_SOFTKEY_OVERRIDE_LABEL, 2, 2)]))
+
+    objects.append(make_key(ID_SOFTKEY_BACK_3, key_code=9, children=[(ID_SOFTKEY_BACK_LABEL, 2, 2)]))
+
+    objects.append(make_soft_key_mask(
+        [ID_SOFTKEY_WIFI_TOGGLE, ID_SOFTKEY_OVERRIDE, ID_SOFTKEY_BACK_3], mask_id=ID_SOFT_KEY_MASK_3))
 
     objects.append(make_data_mask(data_mask_children))
 
@@ -492,8 +594,21 @@ def generate_ids_header():
         "constexpr uint16_t kDataMask = {};".format(ID_DATA_MASK),
         "constexpr uint16_t kSoftKeyMask = {};".format(ID_SOFT_KEY_MASK),
         "constexpr uint16_t kSoftKeyMask2 = {};".format(ID_SOFT_KEY_MASK_2),
+        "constexpr uint16_t kSoftKeyMask3 = {};".format(ID_SOFT_KEY_MASK_3),
         "constexpr uint16_t kTitleString = {};".format(ID_TITLE_STRING),
         "constexpr uint16_t kTitleStringMaxChars = {};".format(TITLE_MAX_CHARS),
+        "",
+        "constexpr uint16_t kSoftkeyNext3 = {};".format(ID_SOFTKEY_NEXT_3),
+        "constexpr uint16_t kSoftkeyBack3 = {};".format(ID_SOFTKEY_BACK_3),
+        "",
+        "// WiFi status/control panel (page 3) -- see net/wifi_ap.hpp.",
+        "constexpr uint16_t kSoftkeyWifiToggle = {};".format(ID_SOFTKEY_WIFI_TOGGLE),
+        "constexpr uint16_t kWifiEnabledFillAttr = {};".format(ID_WIFI_ENABLED_FILL),
+        "constexpr uint16_t kWifiSsidLabel = {};".format(ID_WIFI_SSID_LABEL),
+        "constexpr uint16_t kWifiPasswordInput = {};".format(ID_WIFI_PASSWORD_INPUT),
+        "constexpr uint16_t kWifiIpLabel = {};".format(ID_WIFI_IP_LABEL),
+        "constexpr uint16_t kWifiClientsLabel = {};".format(ID_WIFI_CLIENTS_LABEL),
+        "constexpr uint16_t kWifiPasswordMaxChars = {};".format(WIFI_PASSWORD_MAX_CHARS),
         "",
         "// channel: 1-8",
         "inline uint16_t relay_rect_id(int channel) {{ return {} + channel; }}".format(1110),

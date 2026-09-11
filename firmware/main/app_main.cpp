@@ -168,6 +168,10 @@ extern "C" void app_main(void) {
             last_vt_connected = vt_connected;
         }
 
+        if (tick % 100 == 0) {  // ~2s -- see refresh_wifi_client_count()'s doc comment
+            iso::vt_app::refresh_wifi_client_count();
+        }
+
         if (tick % 10 == 0) {  // ~200ms, matching the original heartbeat rate
             // Heartbeat: green while the relay expander is working and we
             // hold a valid ISOBUS address, red otherwise (checked live,

@@ -536,6 +536,18 @@ that actually motivated this phase, rather than the fully generic
       needs to be DMA-capable or in internal RAM specifically.
       W5500 Ethernet concurrency not tested (not wired up yet at all --
       separate from this phase's scope).
+- [x] WiFi status/control panel on the VT itself (direct request, not
+      originally scoped in this phase's checklist): the AP's SSID,
+      password, `192.168.4.1` IP, and live connected-client count, plus a
+      checkbox to disable the AP entirely and an editable field (VT Input
+      String) to change the password from the cab. Required a third SKM
+      page -- both existing pages were already at the 10-key ceiling, so
+      the "Momentary Override Safety" toggle moved from page 2's SK10 to
+      the new page 3 (a more natural home next to another device-wide
+      setting anyway) to make room for a page2->page3 nav key. See
+      [vt-ui-design.md](vt-ui-design.md#wifi-status--control-panel) for
+      the full layout and why the password default stayed random-per-unit
+      rather than becoming a fixed value.
 
 ## Phase 8 — Robustness & polish
 

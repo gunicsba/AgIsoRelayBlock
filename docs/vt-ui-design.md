@@ -100,10 +100,11 @@ on the screen.
 ## "Momentary Override Safety" checkbox
 
 A single, device-wide checkbox (unfilled/unchecked by default) on the
-Data Mask, below the relay grid, toggled by SK10 on SKM page 2 (terse
-"OR" label, next to the momentary-override keys it controls — see
-`gen_object_pool.py`'s comment for why "OR" rather than spelling it out
-there; the full name is the label printed next to the checkbox itself).
+Data Mask, below the relay grid, toggled by SK2 on SKM page 3 (terse "OR"
+label — see `gen_object_pool.py`'s comment for why, and why it lives on
+page 3 alongside the WiFi panel below rather than page 2's per-channel
+momentary keys; the full name is the label printed next to the checkbox
+itself).
 
 **Motivating example**: an auto-mode drives a hydraulic cylinder (e.g. a
 rear door) and normally stops it at a DI-triggered limit partway through
@@ -132,12 +133,50 @@ deliberate per-session choice. Relay outputs follow the same
 never-persisted, always-off-at-boot rule (`io::relay_driver::init()`, N4)
 for the same reason.
 
-## Soft Key Masks: two pages, reached via a next/back key
+## WiFi status & control panel
 
-Two Soft Key Mask objects, switched at runtime with the VT's "Change Soft
-Key Mask" command (`send_change_softkey_mask`) rather than existing as two
-separate Data Masks — the Data Mask itself never changes, just which SKM
-is currently shown alongside it.
+Below the override checkbox, also on the shared Data Mask (visible
+regardless of which SKM page is active) — mirrors `net::wifi_ap.hpp`
+(Phase 7, [roadmap.md](roadmap.md#phase-7--wifi-ap--ota)):
+
+- A checkbox, same convention as the override checkbox above (unfilled =
+  off), labeled **"WiFi AP Enabled"**, toggled by SK1 on SKM page 3
+  (terse **"AP"** label). Checked by default (the AP comes up
+  unconditionally at boot); unchecking it tears down the SoftAP entirely
+  — no local web UI/OTA/relay-control reachability at all until it's
+  re-enabled from here, since there's no Ethernet fallback wired up yet.
+  Not persisted (see below).
+- **SSID** — read-only text, `"SSID: AgIsoBlock-XXXX"`.
+- **Password** — an Input String, not just a label: its rendered value
+  *is* the current password, and it's directly editable from the VT
+  (tap-to-edit on a touchscreen, or the VT's own field-navigation on a
+  button-only one) rather than needing a separate "edit" key. Confirming
+  a new value fires `VTChangeStringValueMessage`
+  (`get_vt_change_string_value_event_dispatcher()`), which
+  `net::wifi_ap::set_password()` applies immediately (reconfiguring the
+  running AP, dropping any already-connected clients including possibly
+  whoever just made the change) if it's at least 8 characters — WPA2-PSK's
+  actual protocol minimum, not a policy choice — or is rejected and the
+  field reverts to the still-current password otherwise. Deliberately no
+  default of the "same for every unit" kind (`12345678`, etc. — see
+  requirement N7): the device generates a random 12-character password on
+  first boot ([roadmap.md](roadmap.md#phase-7--wifi-ap--ota)) and this
+  panel is what turns "read it off a serial log once during setup" into
+  "read *or change* it from the cab any time," rather than trading that
+  security property away for convenience.
+- **IP** — read-only text, always `192.168.4.1` (ESP-IDF's fixed
+  AP-mode default).
+- **Clients** — read-only text, `"Clients: N"`, refreshed roughly every
+  2 seconds (`iso::vt_app::refresh_wifi_client_count()`) independently of
+  anything the operator does, since it can change on its own (a phone
+  joining/leaving the AP).
+
+## Soft Key Masks: three pages, chained via next/back keys
+
+Three Soft Key Mask objects, switched at runtime with the VT's "Change
+Soft Key Mask" command (`send_change_softkey_mask`) rather than existing
+as separate Data Masks — the Data Mask itself never changes, just which
+SKM is currently shown alongside it.
 
 **Page 1 "Main SKM" (10 keys) — the default on connect:**
 
@@ -147,12 +186,21 @@ is currently shown alongside it.
 | SK9 | Trigger buzzer (momentary pulse) | Text label **"BZ"** — Distinct buzzer/speaker pictogram once icons exist (Phase 5) |
 | SK10 | Switch to page 2 | Text label **">>"** |
 
-**Page 2 "Momentary SKM" (9 keys):**
+**Page 2 "Momentary SKM" (10 keys):**
 
 | Key | Action | Icon |
 |---|---|---|
 | SK1–SK8 | Momentary-override relay channel 1–8 (see [AUX-N functions](#aux-n-functions-17-total) below for exactly what this does) | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator, matching the AUX-N momentary variant's convention |
 | SK9 | Switch back to page 1 | Text label **"<<"** |
+| SK10 | Switch to page 3 | Text label **">>"** — reuses page 1's own SK10 label object (identical meaning) |
+
+**Page 3 "WiFi/Settings SKM" (3 keys):**
+
+| Key | Action | Icon |
+|---|---|---|
+| SK1 | Toggle the WiFi panel's "AP Enabled" checkbox | Text label **"AP"** |
+| SK2 | Toggle the "Momentary Override Safety" checkbox | Text label **"OR"** |
+| SK9 | Switch back to page 2 | Text label **"<<"** — reuses page 2's own SK9 label object |
 
 Key labels use 32×32 text (bumped up from an initial 8×8 pass that was
 "way too small" on the bench — roughly 4× the linear size), and SK1–SK8
@@ -162,7 +210,9 @@ AUX-N assignment list labeling for consistency.
 **Compatibility caveat:** not every VT renders 10 soft keys at once — many
 show 6 physical keys per mask, some 8, larger ones more. This needs
 resolving on the bench (see [Open questions](#open-questions)) for VTs
-other than the one this has actually been tested against.
+other than the one this has actually been tested against — and now
+matters more than it did with two pages, since page 1 alone already
+assumes the full 10.
 
 ## AUX-N functions (17 total)
 

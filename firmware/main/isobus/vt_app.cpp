@@ -15,6 +15,7 @@
 #include "isobus/isobus/isobus_virtual_terminal_client.hpp"
 #include "isobus/object_pool_ids.hpp"
 #include "isobus/utility/iop_file_interface.hpp"
+#include "net/wifi_ap.hpp"
 
 // Symbols for the object pool binary embedded via main/CMakeLists.txt's
 // EMBED_FILES (linker-generated, matching the object pool's filename).
@@ -142,6 +143,31 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
         return;
     }
 
+    if (event.objectID == object_pool_ids::kSoftkeyNext3) {
+        bool ok = g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
+                                                        object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask3);
+        ESP_LOGI(kTag, "SK next: switch to page 3 (WiFi) -> %s", ok ? "sent" : "FAILED to send");
+        return;
+    }
+
+    if (event.objectID == object_pool_ids::kSoftkeyBack3) {
+        bool ok = g_vt_client->send_change_softkey_mask(isobus::VirtualTerminalClient::MaskType::DataMask,
+                                                        object_pool_ids::kDataMask, object_pool_ids::kSoftKeyMask2);
+        ESP_LOGI(kTag, "SK back: switch to page 2 -> %s", ok ? "sent" : "FAILED to send");
+        return;
+    }
+
+    if (event.objectID == object_pool_ids::kSoftkeyWifiToggle) {
+        bool new_enabled = !net::wifi_ap::is_enabled();
+        net::wifi_ap::set_enabled(new_enabled);
+        g_vt_client->send_change_fill_attributes(
+            object_pool_ids::kWifiEnabledFillAttr,
+            new_enabled ? isobus::VirtualTerminalClient::FillType::FillWithSpecifiedColourInFillColourAttribute
+                        : isobus::VirtualTerminalClient::FillType::NoFill,
+            kColourBlack, isobus::NULL_OBJECT_ID);
+        return;
+    }
+
     if (event.objectID == object_pool_ids::kSoftkeyOverrideToggle) {
         g_momentary_override_safety_enabled = !g_momentary_override_safety_enabled;
         ESP_LOGI(kTag, "Momentary Override Safety: %s", g_momentary_override_safety_enabled ? "CHECKED (momentary can bypass DI interlock)" : "unchecked (default)");
@@ -181,6 +207,33 @@ void handle_change_soft_key_mask_event(const isobus::VirtualTerminalClient::VTCh
     ESP_LOGI(kTag, "VT confirms soft key mask now %u (mask %u) missingObjects=%d maskOrChildHasErrors=%d anyOtherError=%d",
              event.softKeyMaskObjectID, event.dataOrAlarmMaskObjectID, event.missingObjects,
              event.maskOrChildHasErrors, event.anyOtherError);
+}
+
+// Fired when the operator edits the WiFi password Input String and
+// confirms it on the VT (see docs/vt-ui-design.md#wifi-status--control-panel).
+// The VT always reports the *entire* field content, space-padded to its
+// fixed reserved length, not just what changed -- trim trailing padding to
+// get the password the operator actually intended.
+void handle_change_string_value_event(const isobus::VirtualTerminalClient::VTChangeStringValueEvent& event) {
+    if (event.objectID != object_pool_ids::kWifiPasswordInput) {
+        return;
+    }
+    std::string password = event.value;
+    while (!password.empty() && password.back() == ' ') {
+        password.pop_back();
+    }
+    if (net::wifi_ap::set_password(password)) {
+        ESP_LOGI(kTag, "WiFi AP password changed from the VT panel");
+    } else {
+        ESP_LOGW(kTag, "WiFi AP password change rejected (needs at least 8 characters) -- reverting the displayed value");
+    }
+    // Re-push the actual current password either way: on success this just
+    // re-pads it to the field's fixed width the same way it started; on
+    // rejection this undoes what the operator just typed, since
+    // net::wifi_ap::set_password() left the real password unchanged.
+    std::string display = net::wifi_ap::get_password();
+    display.resize(object_pool_ids::kWifiPasswordMaxChars, ' ');
+    g_vt_client->send_change_string_value(object_pool_ids::kWifiPasswordInput, display);
 }
 
 // AUX-N: both function variants per channel are declared non-latching/
@@ -286,6 +339,7 @@ void init(std::shared_ptr<isobus::InternalControlFunction> internal_ecu) {
     g_vt_client->get_vt_soft_key_event_dispatcher().add_listener(handle_soft_key_event);
     g_vt_client->get_auxiliary_function_event_dispatcher().add_listener(handle_aux_function_event);
     g_vt_client->get_vt_change_soft_key_mask_event_dispatcher().add_listener(handle_change_soft_key_mask_event);
+    g_vt_client->get_vt_change_string_value_event_dispatcher().add_listener(handle_change_string_value_event);
     g_vt_client->initialize(true);
     ESP_LOGI(kTag, "VT client started, waiting for a Virtual Terminal on the bus...");
 }
@@ -353,6 +407,42 @@ void resync_display() {
         g_momentary_override_safety_enabled ? isobus::VirtualTerminalClient::FillType::FillWithSpecifiedColourInFillColourAttribute
                                              : isobus::VirtualTerminalClient::FillType::NoFill,
         kColourBlack, isobus::NULL_OBJECT_ID);
+
+    g_vt_client->send_change_fill_attributes(
+        object_pool_ids::kWifiEnabledFillAttr,
+        net::wifi_ap::is_enabled() ? isobus::VirtualTerminalClient::FillType::FillWithSpecifiedColourInFillColourAttribute
+                                    : isobus::VirtualTerminalClient::FillType::NoFill,
+        kColourBlack, isobus::NULL_OBJECT_ID);
+    g_vt_client->send_change_string_value(object_pool_ids::kWifiSsidLabel, "SSID: " + net::wifi_ap::get_ssid());
+    std::string password_display = net::wifi_ap::get_password();
+    password_display.resize(object_pool_ids::kWifiPasswordMaxChars, ' ');
+    g_vt_client->send_change_string_value(object_pool_ids::kWifiPasswordInput, password_display);
+    // Always 192.168.4.1 -- ESP-IDF's fixed default AP-mode address, not
+    // configured otherwise. Sent dynamically anyway (rather than baked
+    // into the static pool) for the same reason the title's version isn't:
+    // one clearly-labeled place this comes from, not two that could drift.
+    g_vt_client->send_change_string_value(object_pool_ids::kWifiIpLabel, "IP: 192.168.4.1");
+    refresh_wifi_client_count();
+}
+
+// The connected-client count can change at any moment (someone's phone
+// joining or leaving the AP), not just around a VT connect/reconnect --
+// call periodically (see app_main.cpp's main loop) as well as from
+// resync_display(). Only sends a Change String Value when the count
+// actually changed, same diffing pattern as automation::interlock's own
+// update() loop, so this doesn't put a CAN message on the bus every tick
+// for no reason.
+void refresh_wifi_client_count() {
+    if (!g_vt_client) {
+        return;
+    }
+    static uint8_t last_count = 0xFF;  // force the first call through
+    uint8_t count = net::wifi_ap::get_connected_client_count();
+    if (count == last_count) {
+        return;
+    }
+    last_count = count;
+    g_vt_client->send_change_string_value(object_pool_ids::kWifiClientsLabel, "Clients: " + std::to_string(count));
 }
 
 }  // namespace iso::vt_app

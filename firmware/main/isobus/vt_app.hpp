@@ -67,4 +67,14 @@ void resync_display();
 // (interlocked, or the I2C write itself failed). channel is 1-8.
 bool set_relay_remote(int channel, bool state);
 
+// Refreshes the WiFi panel's "Clients: N" display from
+// net::wifi_ap::get_connected_client_count() if it changed since the last
+// call (a no-op CAN-message-wise otherwise). Unlike everything else on
+// the panel, the client count can change at any moment on its own (a
+// phone joining/leaving the AP), not just in response to something this
+// firmware did -- call this periodically (e.g. every ~2s) from app_main's
+// main loop, in addition to it already being covered once by
+// resync_display() on every fresh VT connection.
+void refresh_wifi_client_count();
+
 }  // namespace iso::vt_app
