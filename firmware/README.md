@@ -89,6 +89,22 @@ Bench-verified on real hardware (board on COM12):
   of a suffix character (per bench feedback: "I'd also expect R1 to R8
   there"). Buzzer's AUX-N designator also got its own dedicated `"B"`
   label instead of reusing SK9's `"Bz"`, so it can't clip either.
+- 2026-09-11: fixed a real behavioral bug found while testing a channel
+  with both a toggle and a momentary control assigned: the momentary one
+  always won and forced the relay off, even without being pressed. Root
+  cause: it mirrored its input value straight to the relay, but AUX-N
+  input devices report status periodically even while idle, so its own
+  "released" reports kept silently overriding whatever the toggle variant
+  had set. Redefined the momentary variant as an override instead of a
+  competing direct setter: press saves the relay's current state and
+  forces it off, release restores the saved state. Also: SK1-SK8 now show
+  `"R1"`-`"R8"` (underlined, matching the AUX-N toggle variant's
+  convention) instead of a bare digit; buzzer labels (SK9 and the AUX-N
+  function) both now say `"BZ"`; and the buzzer itself turned out to be a
+  passive piezo needing a driven tone, not a static DC level -- rewrote
+  [buzzer_driver.cpp](main/io/buzzer_driver.cpp) to drive it via LEDC PWM
+  (~2.7kHz) instead of a plain GPIO pulse. See
+  [../docs/vt-ui-design.md](../docs/vt-ui-design.md#aux-n-functions-17-total).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)

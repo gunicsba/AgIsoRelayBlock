@@ -302,9 +302,16 @@ def build_pool():
     for k in range(1, 10):
         key_id = softkey_id(k)
         label_id = softkey_label_id(k)
-        label_text = "Bz" if k == 9 else str(k)
+        # SK1-SK8 toggle the relay (matches the AUX-N "toggle" variant's
+        # behavior), so they get the same "R{n}" text + underline
+        # convention: underlined = toggles/latches, plain = hold-to-run.
+        # SK9 (buzzer) has no such distinction to make, so no underline.
+        if k == 9:
+            label_text, font_id = "BZ", ID_FONT_LARGE
+        else:
+            label_text, font_id = "R{}".format(k), ID_FONT_LARGE_UNDERLINE
 
-        objects.append(make_output_string(label_id, 40, 36, label_text, font_id=ID_FONT_LARGE))
+        objects.append(make_output_string(label_id, RECT_SIZE, LABEL_HEIGHT, label_text, font_id=font_id))
         objects.append(make_key(key_id, key_code=k, children=[(label_id, 2, 2)]))
         key_ids.append(key_id)
 
@@ -345,10 +352,11 @@ def build_pool():
             aux_momentary_function_id(ch), AUX_FUNC_NON_LATCHING_MOMENTARY,
             children=[(relay_label_id(ch), 2, 2)]))
 
-    # Buzzer: its own dedicated "B" label (not SK9's "Bz" -- kept short so
-    # it can't clip in the AUX-N assignment list's designator area either).
+    # Buzzer: its own dedicated "BZ" label, sized the same generous way as
+    # every other label here (the box, not text length, was what caused
+    # the earlier clipping bug -- see the toggle variant's history above).
     objects.append(make_output_string(ID_AUX_BUZZER_LABEL, RECT_SIZE, LABEL_HEIGHT,
-                                      "B", font_id=ID_FONT_LARGE))
+                                      "BZ", font_id=ID_FONT_LARGE))
     objects.append(make_auxiliary_function_type2(
         ID_AUX_BUZZER_FUNCTION, AUX_FUNC_NON_LATCHING_MOMENTARY,
         children=[(ID_AUX_BUZZER_LABEL, 2, 2)]))

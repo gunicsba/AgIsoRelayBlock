@@ -117,11 +117,12 @@ review:
   since it costs nothing and removes a possible edge case for any VT
   implementation that parses in a single linear pass.
 
-**Known issues (not yet resolved):**
-- The buzzer (SK9) pulse is audible but very quiet. Buzzer type
-  (active/DC vs. passive/piezo needing a driven tone) is unconfirmed, so
-  this hasn't been guessed at yet — see
-  [buzzer_driver.cpp](../firmware/main/io/buzzer_driver.cpp).
+**Known issues:**
+- ~~The buzzer (SK9) pulse is audible but very quiet.~~ **Resolved:**
+  confirmed to be a passive piezo buzzer, which needs a continuously
+  driven audio-frequency square wave to sound, not a static DC level.
+  Rewrote [buzzer_driver.cpp](../firmware/main/io/buzzer_driver.cpp) to
+  drive it via LEDC PWM (~2.7kHz, 50% duty) instead of a plain GPIO pulse.
 - The implement intermittently disappears from the VT and needs a VT
   restart to reappear — reproduced on the bench as the VT's control
   function going offline mid-connection. Confirmed to be existing
@@ -158,10 +159,25 @@ review:
       size (16×10, 8×8 font) while every other label got bumped, so it
       rendered as a clipped, unlabeled "R" in the AUX-N assignment list —
       all 8 toggle entries looked identical, an easy way to grab the wrong
-      one. Fixed: same "R{n}" text as the hold-to-run variant, sized to
+      one. Fixed: same "R{n}" text as the momentary variant, sized to
       match, distinguished by an underlined font instead of a suffix
-      character. The buzzer's AUX-N designator also got its own dedicated
-      "B" label rather than reusing SK9's "Bz", so it can't clip either.
+      character; SK1–SK8 got the same "R{n}"/underline treatment for
+      consistency (an SKM press already toggles). The buzzer's AUX-N
+      designator and SK9 both now say "BZ".
+
+      Assignment testing also turned up a real behavioral bug: with both a
+      toggle and a momentary control assigned to the same channel, the
+      momentary one always won and forced the relay off, even without
+      being pressed. Root cause: the momentary variant mirrored its input
+      value straight to the relay, but AUX-N input devices report status
+      periodically even while idle, so its own "released" reports kept
+      silently overriding whatever the toggle variant had set. Fixed by
+      redefining the momentary variant as an override rather than a
+      competing direct setter: press saves the relay's current state and
+      forces it off, release restores the saved state — so it can no
+      longer fight with another control over the same relay, at the cost
+      of no longer being usable standalone to turn on something that's
+      normally off (it only pauses, never activates).
 - [x] Verify manual VT control and AUX-N control don't fight each other
       (e.g. last-write-wins, or explicit precedence rule — decide and
       document) — both paths funnel through the same `apply_relay_state`

@@ -53,11 +53,13 @@ reflowed into a grid. Each widget:
 
 | Key | Action | Icon |
 |---|---|---|
-| SK1–SK8 | Toggle relay channel 1–8 | Shared relay pictogram + channel number (same icon used by that channel's AUX-N function, so the physical key and the on-screen row look consistent) |
-| SK9 | Trigger buzzer (momentary pulse) | Distinct buzzer/speaker pictogram |
+| SK1–SK8 | Toggle relay channel 1–8 | Text label **"R{n}"**, underlined — same "R{n}" + underline convention as the AUX-N toggle variant, since an SKM press already toggles (same icon used by that channel's AUX-N function, so the physical key and the on-screen row look consistent) |
+| SK9 | Trigger buzzer (momentary pulse) | Text label **"BZ"** — Distinct buzzer/speaker pictogram once icons exist (Phase 5) |
 
 Key labels use 32×32 text (bumped up from an initial 8×8 pass that was
-"way too small" on the bench — roughly 4× the linear size).
+"way too small" on the bench — roughly 4× the linear size), and SK1–SK8
+now show **"R1"–"R8"** rather than a bare digit, matching the Data Mask
+and AUX-N assignment list labeling for consistency.
 
 **Compatibility caveat:** not every VT renders 9 soft keys at once — many
 show 6 physical keys per mask, some 8, larger ones more. This needs
@@ -70,13 +72,29 @@ VTs that can't fit a 9th key.
 
 Each relay channel publishes **two** Auxiliary Function Type 2 objects, so
 the operator picks whichever behavior fits their equipment in the
-tractor's own native AUX-N assignment menu: hold-to-run for spool-valve-
-style loads, or toggle-and-stay for lights/pumps/fans. This is a
-deliberate choice, not an oversight: the hardware is generic relay
-contacts that could drive either kind of load, so offering both lets the
-assignment-time choice live where it belongs — with the person wiring up
-the equipment — at the cost of a longer list in the tractor's assignment
-menu.
+tractor's own native AUX-N assignment menu: a momentary override for
+temporarily pausing something that's on, or toggle-and-stay for
+lights/pumps/fans. This is a deliberate choice, not an oversight: the
+hardware is generic relay contacts that could drive either kind of load,
+so offering both lets the assignment-time choice live where it belongs —
+with the person wiring up the equipment — at the cost of a longer list in
+the tractor's assignment menu.
+
+**The momentary variant is an override, not a direct setter.** An earlier
+version mirrored the input value straight to the relay (hold-to-run,
+relay on only while held) — but AUX-N input devices report their status
+periodically even while idle/released, not just on change, so with a
+toggle and a momentary variant both assigned to the same channel, the
+momentary variant's own idle "released" reports would repeatedly and
+silently stomp whatever the toggle variant had set. Bench-confirmed: "the
+momentary always turns it off." Fixed by making momentary an override
+instead of a competing setter: pressing it saves the relay's current
+state and forces the relay off; releasing restores whatever that saved
+state was. Two controls for the same relay no longer fight over it. The
+tradeoff: the momentary variant can no longer be used on its own to turn
+on something that's normally off (pressing it while already off just
+does nothing, then restores to off on release) — it only ever pauses,
+never activates.
 
 **Both variants are declared `BooleanNonLatchingIncreaseValue` (2) at the
 protocol level — neither uses `BooleanLatchingOnOff` (0).** Most tractors
@@ -93,13 +111,13 @@ value straight through.
 
 | # | Function | Type 2 `FunctionType` | Behavior | Label/Icon |
 |---|---|---|---|---|
-| 1–8 | Relay channel 1–8, toggle | `BooleanNonLatchingIncreaseValue` (2) | Firmware toggles the relay on each press (rising edge), ignores release — a momentary button acts like a latch | Text label **"R{n}"**, **underlined** — same digits as the hold-to-run variant below (an earlier `"R{n}#"` attempt rendered as an unlabeled, clipped "R" in the AUX-N assignment list: its label object had been left at the pre-readability-pass size while everything else got bumped) |
-| 9–16 | Relay channel 1–8, hold-to-run | `BooleanNonLatchingIncreaseValue` (2) | Firmware mirrors the input value straight to the relay — on only while the mapped button is held | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator |
-| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Edge-triggered pulse on rising edge; matches SK9's pulse behavior | Own dedicated **"B"** label (short enough it can't clip regardless of the assignment list's designator box size) |
+| 1–8 | Relay channel 1–8, toggle | `BooleanNonLatchingIncreaseValue` (2) | Firmware toggles the relay on each press (rising edge), ignores release — a momentary button acts like a latch | Text label **"R{n}"**, **underlined** — same digits as the momentary variant below (an earlier `"R{n}#"` attempt rendered as an unlabeled, clipped "R" in the AUX-N assignment list: its label object had been left at the pre-readability-pass size while everything else got bumped) |
+| 9–16 | Relay channel 1–8, momentary override | `BooleanNonLatchingIncreaseValue` (2) | Firmware saves the relay's current state and forces it off on press; restores the saved state on release. Only has a visible effect on a channel that's already on — see the note above | Text label **"R{n}"**, plain (no underline) — reuses the same label object as that channel's Data Mask indicator |
+| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Edge-triggered pulse on rising edge; matches SK9's pulse behavior | Own dedicated **"BZ"** label |
 
 See `handle_aux_function_event` in
 [vt_app.cpp](../firmware/main/isobus/vt_app.cpp) for the actual edge
-detection / mirroring logic.
+detection / override logic.
 
 All 17 are advertised unconditionally; whether any physical joystick/armrest
 button actually gets mapped to one is entirely up to the tractor's own

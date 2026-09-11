@@ -70,10 +70,20 @@ void handle_soft_key_event(const isobus::VirtualTerminalClient::VTKeyEvent& even
 // physical buttons, and a tractor's assignment menu generally only offers
 // type-matched input/function pairs -- see the comment in
 // gen_object_pool.py's build_pool() for why). The "latching" *result* for
-// one of the two variants is therefore produced here, in firmware, not by
-// the declared function type: toggle on each rising edge, ignore the
-// release. The other variant mirrors the input value straight to the
-// relay (hold-to-run) -- see docs/vt-ui-design.md#aux-n-functions-17-total.
+// the toggle variant is therefore produced here, in firmware, not by the
+// declared function type: toggle on each rising edge, ignore the release.
+//
+// The other variant is NOT a direct mirror (an earlier version was, but
+// that meant its own idle/released status reports -- sent periodically
+// regardless of whether it's ever actually been pressed -- would
+// unconditionally stomp whatever the toggle variant or SKM had set,
+// since "released" was mirrored as an unconditional relay-off command).
+// It's an override instead: pressing it saves the relay's current state
+// and forces the relay off; releasing restores whatever that saved state
+// was. Two controls for the same relay no longer fight over it -- the
+// momentary one temporarily suspends the output rather than competing to
+// set it -- at the cost of no longer being usable on its own to turn on
+// something that's normally off (see docs/vt-ui-design.md#aux-n-functions-17-total).
 void handle_aux_function_event(const isobus::VirtualTerminalClient::AuxiliaryFunctionEvent& event) {
     const bool state = (event.value1 != 0);
     const uint16_t function_id = event.function.functionObjectID;
@@ -90,10 +100,21 @@ void handle_aux_function_event(const isobus::VirtualTerminalClient::AuxiliaryFun
             return;
         }
         if (function_id == object_pool_ids::aux_momentary_function_id(ch)) {
-            // Direct mirror: relay follows the input's held/released state.
-            if (io::relay_driver::get_relay(ch) != state) {
-                apply_relay_state(ch, state);
+            static bool last_momentary_input_state[9] = {};  // index 1-8, [0] unused
+            static bool saved_state_before_press[9] = {};
+            if (state && !last_momentary_input_state[ch]) {
+                // Rising edge: remember the current state, force off.
+                saved_state_before_press[ch] = io::relay_driver::get_relay(ch);
+                if (saved_state_before_press[ch]) {
+                    apply_relay_state(ch, false);
+                }
+            } else if (!state && last_momentary_input_state[ch]) {
+                // Falling edge: restore.
+                if (io::relay_driver::get_relay(ch) != saved_state_before_press[ch]) {
+                    apply_relay_state(ch, saved_state_before_press[ch]);
+                }
             }
+            last_momentary_input_state[ch] = state;
             return;
         }
     }
