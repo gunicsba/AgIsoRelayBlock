@@ -5,12 +5,15 @@ An open-source, DIY-friendly alternative to commercial ISOBUS relay boxes
 **Waveshare ESP32-S3-ETH-8DI-8RO-C** industrial relay module.
 
 > Status: **Early firmware, bench-verified through Phase 4, the start of
-> Phase 6, and Phase 7.** The device claims an ISOBUS address, uploads a
-> two-page Virtual Terminal object pool, its on-screen soft keys and
-> AUX-N joystick/armrest functions actually switch real relays, a digital
-> input can act as a limit-switch interlock for its matching channel, and
-> it now also brings up its own WiFi AP with a local status/control page
-> and OTA firmware updates -- see [Project Status](#project-status) below.
+> Phase 6, Phase 7, and the start of Phase 8.** The device claims an
+> ISOBUS address, uploads a three-page Virtual Terminal object pool, its
+> on-screen soft keys and AUX-N joystick/armrest functions actually
+> switch real relays, a digital input can act as a limit-switch interlock
+> for its matching channel, it brings up its own WiFi AP with a local
+> status/control page and OTA firmware updates (SSID/password/status also
+> shown and editable right on the VT), and it now broadcasts DM1
+> diagnostics for the fault conditions it can actually detect -- see
+> [Project Status](#project-status) below.
 
 ![Object pool rendered on a real Virtual Terminal: 8 relay indicators in a 2x4 grid, and the 10-key Soft Key Mask (R1-R8 toggle, BZ buzzer, >> next page)](images/main%20screen.png)
 
@@ -129,12 +132,16 @@ bug-fix history):
    web page (status + relay toggles mirroring the VT, plus a firmware
    upload form) with rollback if the new image fails to claim its ISOBUS
    address.
-9. Polish, diagnostics (DM1).
+9. Polish, ~~diagnostics (DM1).~~ — DM1 done: broadcasts Active Diagnostic
+   Trouble Codes for VT-connection-lost and relay-I2C-write-failure, the
+   two conditions this hardware can actually detect right now (CAN
+   bus-off monitoring and physical relay-state feedback are still open).
+   General polish is not.
 
 Known open issues: the tractor's soft key labels sometimes don't visually
-refresh when switching between the two SKM pages until another key is
-pressed, even though the underlying page switch takes effect immediately
-(reads as a VT-side repaint quirk, not a firmware bug -- the switch
+refresh when switching between SKM pages until another key is pressed,
+even though the underlying page switch takes effect immediately (reads
+as a VT-side repaint quirk, not a firmware bug -- the switch
 command is confirmed sent and the new page's keys already respond
 correctly); the implement sometimes disappears from the VT and needs a VT
 restart (traced to a likely gap in AgIsoStack++'s own vendored VT server
