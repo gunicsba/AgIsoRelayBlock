@@ -1,0 +1,131 @@
+# AgIsoRelayBlock
+
+An open-source, DIY-friendly alternative to commercial ISOBUS relay boxes
+(e.g. [ISOBUS Block](https://isobusblock.com/)), built on the off-the-shelf
+**Waveshare ESP32-S3-ETH-8DI-8RO-C** industrial relay module.
+
+> Status: **Early firmware, bench-verified through Phase 3.** The device
+> claims an ISOBUS address, uploads a Virtual Terminal object pool, and its
+> on-screen soft keys actually switch real relays -- see
+> [Project Status](#project-status) below.
+
+![Object pool rendered on a real Virtual Terminal: 8 relay indicators (R1/R2 shown ON) and a 9-key Soft Key Mask](images/test%20iop.png)
+
+## Why
+
+ISOBUS terminals in modern tractors (John Deere, Fendt, Valtra, Case IH,
+CLAAS, ...) already provide a screen and AUX-N joystick/armrest buttons.
+Most older or 3rd-party implements only have a dumb toggle-switch box, so
+every implement needs its own unlabeled switches and the tractor's built-in
+controls go unused.
+
+Commercial products like ISOBUS Block solve this with a small relay ECU that
+plugs into the tractor's ISOBUS (ISO 11783) connector: outputs are named,
+given icons, and mapped to any AUX-N joystick button or the Virtual Terminal
+screen, with a couple of onboard inputs available for simple automations.
+
+**Goal of this project:** reproduce that functionality as open-source
+firmware for cheap, widely-available industrial ESP32 relay hardware, so
+anyone can build or modify their own ISOBUS relay/input block.
+
+## Target hardware
+
+[Waveshare ESP32-S3-ETH-8DI-8RO-C](https://www.waveshare.com/esp32-s3-eth-8di-8ro-c.htm)
+("C" = CAN variant), an industrial DIN-rail module built around an
+ESP32-S3-WROOM-1U-N16R8:
+
+- 8x relay outputs (≤10 A @ 250 VAC / 30 VDC, 1NO+1NC, optocoupler isolated)
+- 8x digital inputs (5–36 V, passive/active, bi-directional optocoupler isolated)
+- Onboard **isolated CAN transceiver** (this is our ISOBUS physical layer),
+  with a jumper-selectable 120 Ω termination resistor
+- W5500 10/100 Ethernet + WiFi/BLE (used for config/OTA/diagnostics, not for ISOBUS)
+- USB-C (power, flashing, debug), RTC, buzzer, WS2812 RGB status LED, TF
+  card slot, screw terminals, DIN-rail ABS enclosure
+- 7–36 V DC screw-terminal power input (12 V/24 V tractor electrics compatible)
+
+Full details and open questions in [docs/hardware.md](docs/hardware.md).
+
+## Feature checklist (parity target vs. ISOBUS Block)
+
+| Feature | ISOBUS Block | AgIsoRelayBlock plan |
+|---|---|---|
+| ISO 11783 ECU, address claim | Yes | Yes ([docs/isobus-protocol.md](docs/isobus-protocol.md)) |
+| Shows up on tractor's Virtual Terminal | Yes | Yes (VT client + object pool, see [docs/vt-ui-design.md](docs/vt-ui-design.md)) |
+| Name each channel, pick an icon, from the terminal | Yes | Yes (VT input objects, no PC/app needed) |
+| Assign any channel to a joystick/armrest button (AUX-N) | Yes | Yes (9 AUX-N functions: 8 relays + buzzer) |
+| Sensor input → automatic relay control, configured on-screen | Yes (8ch model) | Yes (rule engine, VT-configurable) |
+| Runs on 12 V / 24 V tractor power | Yes | Yes (board supports 7–36 V) |
+| Industrial isolation (opto + power) | Yes | Yes (board provides this in hardware) |
+| Channel count | 8 or 32 | 8 (matches this board); more via CAN-connected expansion later |
+| Firmware updates | Vendor-managed | Self-hosted OTA over always-on WiFi AP (`AgIsoBlock-XXXX`) and/or Ethernet |
+| OEM/private label, warranty, support | Commercial | Not applicable (open source, no warranty) |
+
+See [docs/requirements.md](docs/requirements.md) for the detailed functional
+and non-functional requirements this maps to.
+
+## Planned architecture (short version)
+
+- **Framework:** ESP-IDF (native), C++17.
+- **ISOBUS/J1939 stack:** [AgIsoStack++](https://github.com/Open-Agriculture/AgIsoStack-plus-plus)
+  (MIT-licensed, has a built-in ESP32 **TWAI** hardware driver, VT client,
+  and AUX-N support already implemented — avoids re-implementing ISO 11783
+  from scratch).
+- **CAN:** ESP32-S3 built-in TWAI controller → onboard isolated CAN
+  transceiver → ISOBUS connector (250 kbit/s, 29-bit extended ID).
+- **I/O:** thin driver layer mapping AgIsoStack++ output/input requests to
+  the board's relay and digital-input GPIOs.
+- **Config storage:** channel names/icons, AUX-N assignments and automation
+  rules persisted in NVS flash.
+- **WiFi:** always-on SoftAP named `AgIsoBlock-XXXX` (XXXX = last 2 bytes
+  of the device's MAC, hex), used for OTA updates and local config — never
+  for ISOBUS traffic.
+- **Ethernet (W5500):** not part of the ISOBUS link; an alternate path for
+  the same local web UI, logging, and OTA updates.
+
+Full write-up in [docs/architecture.md](docs/architecture.md).
+
+## Project status
+
+Bench-verified through Phase 3 of [docs/roadmap.md](docs/roadmap.md) on
+real hardware (see [firmware/README.md](firmware/README.md) for the full
+detail and bug-fix history):
+
+1. ~~Pin down exact GPIO mapping~~ — done, and corrected a real error in
+   Waveshare's own diagram (I²C SDA/SCL were swapped) along the way.
+2. ~~Get AgIsoStack++ building for ESP32-S3 (TWAI driver) with a "hello
+   ISOBUS" address-claim-only example.~~ — done; claims a real address
+   against a live bus in ~350ms.
+3. ~~Minimal VT object pool: 8 on/off indicators, no naming yet.~~ — done;
+   hand-encoded (no external pool designer tool used) and confirmed
+   rendering correctly on a real VT.
+4. ~~Wire relay/DI GPIOs into the stack.~~ — relays done (on-screen soft
+   keys toggle real relays); digital input debounce + on-screen display
+   still open.
+5. AUX-N support — next up.
+6. On-screen channel naming/icon picker + persistence.
+7. Input → output automation rules.
+8. WiFi AP (`AgIsoBlock-XXXX`) + OTA update path.
+9. Polish, diagnostics (DM1).
+
+Known open issues: the buzzer pulse (SK9) is audible but very quiet; the
+implement sometimes disappears from the VT and needs a VT restart (traced
+to the VT's own connection handling, not this firmware).
+
+## Disclaimer
+
+This is an independent, hobbyist open-source project. It is not affiliated
+with, endorsed by, or derived from ISOBUS Block, ETERVO Oy, or any tractor
+or terminal manufacturer. "ISOBUS" and "ISO 11783" refer to the open AEF/ISO
+standard that any compliant device (this one included) can implement.
+Brand names mentioned are the property of their respective owners.
+
+## License
+
+WTFPL (Do What The F*ck You Want To Public License) — see [LICENSE](LICENSE).
+No warranty, no restrictions; do whatever you want with this code.
+
+## Contributing
+
+Not yet open for contributions — the project is still in the planning
+stage. Feel free to open an issue with hardware notes, protocol corrections,
+or use cases you'd like covered.

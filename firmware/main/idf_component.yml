@@ -1,0 +1,3 @@
+dependencies:
+  idf: ">=5.3"
+  espressif/led_strip: "^2.5.5"

@@ -1,0 +1,22 @@
+# Board defaults for the Waveshare ESP32-S3-ETH-8DI-8RO-C
+# (ESP32-S3-WROOM-1U-N16R8: 16 MB quad SPI flash, 8 MB octal PSRAM).
+#
+# NOTE: flash/PSRAM mode below is the standard WROOM-1U-N16R8 config, but
+# has not been bench-confirmed against this specific board yet -- see the
+# open questions in docs/hardware.md. Revisit if boot fails with a PSRAM
+# init error.
+
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# AgIsoStack++ spawns its own std::thread workers (CAN hardware interface,
+# VT client) backed by ESP-IDF's pthread component. The 3072-byte default
+# stack overflowed in real use (STL-heavy code processing an incoming
+# AUX-N message). Bumped generously -- cheap given this chip's RAM, and a
+# stack overflow into other memory is a much worse failure mode than a
+# few extra KB sitting idle per thread.
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=65536
