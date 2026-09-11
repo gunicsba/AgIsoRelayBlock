@@ -36,6 +36,13 @@ anyone can build or modify their own ISOBUS relay/input block.
 ("C" = CAN variant), an industrial DIN-rail module built around an
 ESP32-S3-WROOM-1U-N16R8:
 
+> **This board ships in several look-alike variants — only the "-C" (CAN)
+> one works for ISOBUS.** Waveshare also sells an `ESP32-S3-ETH-8DI-8RO`
+> (no "C") with **RS485 instead of CAN**, and a PoE Ethernet variant
+> (`ESP32-S3-POE-ETH-8DI-8RO-C`, still CAN, still fine). When buying, check
+> for the CAN transceiver + screw terminal and the "-C" suffix — see
+> [docs/hardware.md#variants](docs/hardware.md#variants).
+
 - 8x relay outputs (≤10 A @ 250 VAC / 30 VDC, 1NO+1NC, optocoupler isolated)
 - 8x digital inputs (5–36 V, passive/active, bi-directional optocoupler isolated)
 - Onboard **isolated CAN transceiver** (this is our ISOBUS physical layer),
