@@ -86,6 +86,16 @@ the channel stays off; the operator has to explicitly command it on
 again, matching this project's "safe defaults" requirement (N4) — a limit
 switch releasing shouldn't by itself resume motion.
 
+**Bench-confirmed real use case**: a hydraulic cylinder's end-stop switch
+wired to DI3, pulled to DGND when the cylinder reaches full travel (see
+[hardware.md](hardware.md#open-questions) for why DGND, not COM, is the
+"active" side of a DI channel). Reaching the end stop drives DI3 active,
+which the VT immediately shows as `"R3!"` with its DI box filled, and
+channel 3's output is force-disabled — stopping further movement in that
+direction without needing any external limit-switch relay or interposing
+logic, and without the operator having to notice anything except the "!"
+on the screen.
+
 ## Soft Key Masks: two pages, reached via a next/back key
 
 Two Soft Key Mask objects, switched at runtime with the VT's "Change Soft
