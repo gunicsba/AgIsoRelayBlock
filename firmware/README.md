@@ -324,6 +324,14 @@ Bench-verified on real hardware (board on COM12):
   rollback. See
   [../docs/roadmap.md](../docs/roadmap.md#phase-7--wifi-ap--ota) and
   [../docs/architecture.md](../docs/architecture.md#wifi-ap--ota-planned).
+
+  Visual confirmation from a real phone joined to the AP: the status/
+  relay-control page, showing R3 correctly grayed out and its "DI
+  Interlock" column reading "ACTIVE" (matching the bench DI3-to-DGND
+  wiring from the interlock section above) --
+  ![local web UI on a phone: AgIsoRelayBlock status page, R3 shown ACTIVE/grayed-out under DI Interlock, R1-R8 toggle buttons, build version af68da6-dirty in the subtitle](../images/web%20ui.jpg)
+  -- and the OTA upload page --
+  ![local web UI OTA upload page on a phone: file picker and "Upload & flash" button, with explanatory text about automatic rollback](../images/web%20ota.jpg).
 - 2026-09-11: added a WiFi status/control panel to the VT itself (SSID,
   password, IP, live connected-client count, an AP-enable checkbox, and
   an editable Input String for the password -- see

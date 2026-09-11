@@ -131,7 +131,10 @@ bug-fix history):
    SoftAP with a randomly-generated, NVS-persisted password, and a local
    web page (status + relay toggles mirroring the VT, plus a firmware
    upload form) with rollback if the new image fails to claim its ISOBUS
-   address.
+   address. SSID/password/status are also shown (and the password is
+   editable) right on the VT itself.
+
+   <img src="images/web%20ui.jpg" alt="local web UI on a phone: status page mirroring the VT, R3 shown ACTIVE/grayed-out under DI Interlock" width="300"> <img src="images/web%20ota.jpg" alt="local web UI OTA upload page on a phone" width="300">
 9. Polish, ~~diagnostics (DM1).~~ — DM1 done: broadcasts Active Diagnostic
    Trouble Codes for VT-connection-lost and relay-I2C-write-failure, the
    two conditions this hardware can actually detect right now (CAN
