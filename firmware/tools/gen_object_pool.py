@@ -57,6 +57,7 @@ ID_DATA_MASK = 1100
 ID_TITLE_STRING = 1101
 ID_SOFT_KEY_MASK = 1200
 ID_FONT = 1900
+ID_FONT_LARGE = 1901  # 32x32 -- Data Mask indicators + soft key labels
 ID_LINE_ATTR = 1910
 
 
@@ -80,7 +81,7 @@ def aux_momentary_function_id(channel):  # channel: 1-8
     return 1520 + channel
 
 
-def aux_momentary_label_id(channel):
+def aux_latch_label_id(channel):
     return 1540 + channel
 
 
@@ -243,21 +244,31 @@ def build_pool():
     objects = []
 
     # --- Shared attribute objects ---
-    objects.append(make_font_attributes(ID_FONT, size=1))  # 8x8
+    objects.append(make_font_attributes(ID_FONT, size=1))  # 8x8 -- title only
+    objects.append(make_font_attributes(ID_FONT_LARGE, size=7))  # 32x32
     objects.append(make_line_attributes(ID_LINE_ATTR, colour=COLOUR_BLACK, width=1))
 
-    # --- Data Mask contents: title + 8-in-a-row relay indicators ---
-    RECT_SIZE = 32
-    RECT_Y = 30
-    LABEL_Y = RECT_Y + RECT_SIZE + 4
-    SPACING = 40
+    # --- Data Mask contents: title + relay indicators, 4-per-row x 2 rows
+    # (60x60 boxes with a 32x32 label under each -- both bumped up from an
+    # earlier 32x32/8x8 pass that turned out to be barely readable).
+    RECT_SIZE = 60
+    LABEL_HEIGHT = 36
+    COLUMNS = 4
+    COL_SPACING = RECT_SIZE + 10
+    ROW_SPACING = RECT_SIZE + LABEL_HEIGHT + 14
     LEFT_MARGIN = 8
+    TOP_MARGIN = 20
 
     data_mask_children = [(ID_TITLE_STRING, LEFT_MARGIN, 4)]
     objects.append(make_output_string(ID_TITLE_STRING, 160, 12, "AgIsoRelayBlock"))
 
     for ch in range(1, 9):
-        x = LEFT_MARGIN + (ch - 1) * SPACING
+        col = (ch - 1) % COLUMNS
+        row = (ch - 1) // COLUMNS
+        x = LEFT_MARGIN + col * COL_SPACING
+        rect_y = TOP_MARGIN + row * ROW_SPACING
+        label_y = rect_y + RECT_SIZE + 4
+
         fill_id = relay_fill_attr_id(ch)
         rect_id = relay_rect_id(ch)
         label_id = relay_label_id(ch)
@@ -265,10 +276,13 @@ def build_pool():
         # Safe default (N4): every relay indicator starts unfilled (off).
         objects.append(make_fill_attributes(fill_id, fill_type=0, colour=COLOUR_BLACK))
         objects.append(make_output_rectangle(rect_id, RECT_SIZE, RECT_SIZE, fill_id))
-        objects.append(make_output_string(label_id, RECT_SIZE, 10, "R{}".format(ch)))
+        # Label stays below (not inside) the rectangle: black-on-black text
+        # would vanish when the indicator fills solid for the ON state.
+        objects.append(make_output_string(label_id, RECT_SIZE, LABEL_HEIGHT,
+                                          "R{}".format(ch), font_id=ID_FONT_LARGE))
 
-        data_mask_children.append((rect_id, x, RECT_Y))
-        data_mask_children.append((label_id, x, LABEL_Y))
+        data_mask_children.append((rect_id, x, rect_y))
+        data_mask_children.append((label_id, x, label_y))
 
     # --- Main Soft Key Mask: SK1-SK8 (relay toggles) + SK9 (buzzer) ---
     # Emitted *before* the Data Mask that references it, and Key objects
@@ -283,7 +297,7 @@ def build_pool():
         label_id = softkey_label_id(k)
         label_text = "Bz" if k == 9 else str(k)
 
-        objects.append(make_output_string(label_id, 16, 10, label_text))
+        objects.append(make_output_string(label_id, 40, 36, label_text, font_id=ID_FONT_LARGE))
         objects.append(make_key(key_id, key_code=k, children=[(label_id, 2, 2)]))
         key_ids.append(key_id)
 
@@ -300,16 +314,19 @@ def build_pool():
     # only-while-held), not from any extra logic on our side. Not children
     # of anything -- see make_auxiliary_function_type2()'s docstring.
     for ch in range(1, 9):
-        # Latching variant reuses the existing "R{ch}" label.
+        # Latching variant gets its own "R{ch}#" label -- the "#" marks it
+        # as the *latching* (toggle-and-stay) variant, distinct from the
+        # plain "R{ch}" momentary (hold-to-run) variant below, which
+        # reuses the Data Mask's own label.
+        latch_label_id = aux_latch_label_id(ch)
+        objects.append(make_output_string(latch_label_id, 16, 10, "R{}#".format(ch)))
         objects.append(make_auxiliary_function_type2(
             aux_latch_function_id(ch), AUX_FUNC_LATCHING_ON_OFF,
-            children=[(relay_label_id(ch), 2, 2)]))
+            children=[(latch_label_id, 2, 2)]))
 
-        momentary_label_id = aux_momentary_label_id(ch)
-        objects.append(make_output_string(momentary_label_id, 16, 10, "R{}h".format(ch)))
         objects.append(make_auxiliary_function_type2(
             aux_momentary_function_id(ch), AUX_FUNC_NON_LATCHING_MOMENTARY,
-            children=[(momentary_label_id, 2, 2)]))
+            children=[(relay_label_id(ch), 2, 2)]))
 
     # Buzzer: momentary only, reuses the SK9 "Bz" label.
     objects.append(make_auxiliary_function_type2(

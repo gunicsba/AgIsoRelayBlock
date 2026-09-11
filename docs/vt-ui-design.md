@@ -1,10 +1,10 @@
 # Virtual Terminal UI Design (Main Screen)
 
 Concrete object pool design for the primary VT screen: 8 relay-state
-indicators in a row, 8 dedicated soft keys to toggle them, 1 dedicated
-soft key to trigger the buzzer, and 17 matching AUX-N functions (a
-latching + a momentary variant per relay channel R1–R8, plus one momentary
-buzzer function). This refines the general VT/AUX-N notes in
+indicators (4-per-row × 2 rows), 8 dedicated soft keys to toggle them, 1
+dedicated soft key to trigger the buzzer, and 17 matching AUX-N functions
+(a latching + a momentary variant per relay channel R1–R8, plus one
+momentary buzzer function). This refines the general VT/AUX-N notes in
 [isobus-protocol.md](isobus-protocol.md) into an actual layout. Naming/icon
 *picking* UI (Phase 5) and automation rule UI (Phase 6) build on top of
 this later and are not covered here.
@@ -22,24 +22,28 @@ labels are used in their place for now.
 - **Working Set** object (root of our pool).
 - **Data Mask "Main"** — the only mask for MVP:
   - Title/identification text (device name).
-  - The 8-in-a-row relay indicator strip (below).
+  - The relay indicator grid (below).
   - Soft Key Mask assigned: **"Main SKM"** (below).
 - Later phases add more masks (naming/icon picker, automation rules) — out
   of scope here, see [roadmap.md](roadmap.md).
 
-## 8-in-a-row relay indicators (on the Data Mask)
+## Relay indicator grid (on the Data Mask)
 
-Eight identical widgets placed side by side across the mask, one per relay
-channel. Each widget:
+Eight identical widgets, 4 per row × 2 rows (R1–R4 top, R5–R8 bottom), one
+per relay channel. First pass used a single row of small 32×32 boxes with
+8×8 text and turned out to be barely readable on the bench — bumped up and
+reflowed into a grid. Each widget:
 
-- An **Output Rectangle**, fixed square size, always outline-drawn (works
-  even on a monochrome VT where colour can't be relied on).
+- An **Output Rectangle**, 60×60, always outline-drawn (works even on a
+  monochrome VT where colour can't be relied on).
   - **OFF:** unfilled / white.
   - **ON:** solid fill (black, or the VT's "active/highlight" colour where
     available) — state is shown by fill, not by hue, so it still reads
     correctly on 2-colour and colour-blind-unfriendly displays.
-- An **Output String** "R1".."R8" always visible (inside or directly under
-  the rectangle) — channel identity must never depend on colour alone.
+- An **Output String** "R1".."R8" in 32×32 text, directly under the
+  rectangle (not inside it: white-on-black would be fine, but a solid
+  black ON fill would swallow black text drawn on top of it, so it stays
+  below where it's readable in both states).
 - Optional (nice-to-have, not required for MVP): make the widget a
   **Button** object so a touchscreen VT can also toggle it by tapping —
   the real toggle path for non-touch VTs is the SKM/AUX-N below, so this
@@ -51,6 +55,9 @@ channel. Each widget:
 |---|---|---|
 | SK1–SK8 | Toggle relay channel 1–8 | Shared relay pictogram + channel number (same icon used by that channel's AUX-N function, so the physical key and the on-screen row look consistent) |
 | SK9 | Trigger buzzer (momentary pulse) | Distinct buzzer/speaker pictogram |
+
+Key labels use 32×32 text (bumped up from an initial 8×8 pass that was
+"way too small" on the bench — roughly 4× the linear size).
 
 **Compatibility caveat:** not every VT renders 9 soft keys at once — many
 show 6 physical keys per mask, some 8, larger ones more. This needs
@@ -72,11 +79,11 @@ offering both lets the assignment-time choice live where it belongs — with
 the person wiring up the equipment — at the cost of a longer list in the
 tractor's assignment menu.
 
-| # | Function | Type 2 `FunctionType` | Behavior | Icon |
+| # | Function | Type 2 `FunctionType` | Behavior | Label/Icon |
 |---|---|---|---|---|
-| 1–8 | Relay channel 1–8, latching | `BooleanLatchingOnOff` (0) | Mirrors the input's reported value directly to the relay; since a latching input reports its own sustained position, this reads as toggle-on/toggle-off | Shared relay pictogram + channel number, same as the SKM key |
-| 9–16 | Relay channel 1–8, momentary | `BooleanNonLatchingIncreaseValue` (2) | Same direct mirroring, but a momentary input reports 1 only while held — so the relay is on only while the mapped button is held | Same pictogram + channel number, with a distinct "momentary" mark (hold icon / different border style — TBD Phase 5) |
-| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Same momentary mirroring; matches SK9's pulse behavior on rising edge | Distinct buzzer/speaker pictogram |
+| 1–8 | Relay channel 1–8, latching | `BooleanLatchingOnOff` (0) | Mirrors the input's reported value directly to the relay; since a latching input reports its own sustained position, this reads as toggle-on/toggle-off | Text label **"R{n}#"** for now (own dedicated label object, not shared with anything else) — the trailing `#` marks it as the latching variant. Shared relay pictogram + `#` mark once icons exist (Phase 5) |
+| 9–16 | Relay channel 1–8, momentary | `BooleanNonLatchingIncreaseValue` (2) | Same direct mirroring, but a momentary input reports 1 only while held — so the relay is on only while the mapped button is held | Text label **"R{n}"**, plain — reuses the same label object as that channel's Data Mask indicator |
+| 17 | Buzzer | `BooleanNonLatchingIncreaseValue` (2) | Same momentary mirroring; matches SK9's pulse behavior on rising edge | Reuses SK9's "Bz" label |
 
 **Why the device doesn't need different logic for latching vs. momentary:**
 per ISO 11783-6, a latching input reports its own persisted 0/1 state on
@@ -84,7 +91,14 @@ change; a momentary (non-latching) input reports 1 only while physically
 held and 0 on release. Our device applies whatever boolean value it
 receives straight to the relay in both cases (`relay_driver::set_relay`) —
 the "feel" comes entirely from how the *input device* reports its value
-over time, not from extra logic on our side.
+over time, not from extra logic on our side. **Checked against a real
+target-hardware constraint** (not yet bench-tested end-to-end): most
+tractors only offer momentary (spring-return) physical buttons on the
+joystick/armrest — assigning one to the *latching* function should make
+the tractor's own AUX-N input handling translate each press into a toggle
+(flip-and-stay); assigning it to the *momentary* function should make it
+hold-to-run instead. That's exactly the two behaviors this design set out
+to offer; an actual joystick-button assignment test is still outstanding.
 
 All 17 are advertised unconditionally; whether any physical joystick/armrest
 button actually gets mapped to one is entirely up to the tractor's own
@@ -108,9 +122,12 @@ demonstrates the (deprecated-for-this-purpose) Type 1 path.
   support it, but must stay legible in black & white — colour is
   decoration here, never the only signal (per the "black and white or
   simple colours" brief).
-- **Sizes:** ISO 11783-6 defines soft-key icon sizes per VT size class;
-  design against the smallest common size (24×24 px) first, with
-  32×32/48×48 variants for larger/newer VTs if the pool format supports
+- **Sizes:** ISO 11783-6 defines soft-key icon sizes per VT size class.
+  The text-label pass that stands in for icons today reads at 32×32 (up
+  from an initial 8×8 that was found to be "way too small" on the bench)
+  and the Data Mask indicators are 60×60 — design the actual icon bitmaps
+  against those, with a 24×24 fallback for VTs too small to fit them, and
+  48×48 variants for larger/newer VTs if the pool format supports
   multiple sizes.
 - **Relay icon:** one shared pictogram (simple toggle-switch/relay-coil
   symbol) reused for channels 1–8, distinguished by an overlaid or

@@ -59,9 +59,23 @@ Bench-verified on real hardware (board on COM12):
   the `AuxiliaryFunctionType1` shown in every vendored library example --
   AgIsoStack++'s own parser logs Type 1 as ignored by VT version 3+
   terminals for real assignment. End-to-end assignment (an actual
-  joystick button mapped and driving a relay) still needs a retest once
-  the bench VT connection is stable enough to complete a pool upload and
-  reach the tractor's native AUX-N assignment menu.
+  joystick button mapped and driving a relay) is still unconfirmed by an
+  actual bench test, but the design was checked against the target
+  hardware constraint: most tractors only offer momentary push-buttons on
+  the joystick/armrest, and per ISO 11783-6 that's exactly what the
+  latching-vs-momentary split above is for -- a momentary button assigned
+  to the *latching* function should toggle (tractor's own AUX-N input
+  handling turns the press into a flip), assigned to the *momentary*
+  function it should be hold-to-run.
+- 2026-09-11: UI readability pass based on bench feedback -- Data Mask
+  indicators bumped from 32x32 to 60x60 and reflowed into a 4-per-row x 2
+  row grid (were "barely readable" in a single row of small boxes); label
+  text on both the Data Mask and the soft keys bumped from an 8x8 font to
+  32x32 (roughly 4x, was "way too small"); the latching AUX-N function's
+  label gets a distinguishing `#` suffix (`"R1#"` vs. plain `"R1"` for the
+  momentary variant) so the two show up distinctly in the tractor's own
+  AUX-N assignment list. See
+  [../docs/vt-ui-design.md](../docs/vt-ui-design.md#relay-indicator-grid-on-the-data-mask).
 
 AgIsoStack++ is vendored as a pinned git submodule under
 [components/AgIsoStack-plus-plus/upstream](components/AgIsoStack-plus-plus/upstream)
